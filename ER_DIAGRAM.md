@@ -41,8 +41,8 @@ erDiagram
     }
 
     STUDENT_SKILLS {
-        int student_id PK_FK
-        int skill_id PK_FK
+        int student_id PK
+        int skill_id PK
         string proficiency
     }
 
@@ -70,8 +70,8 @@ erDiagram
     }
 
     JOB_SKILLS {
-        int job_id PK_FK
-        int skill_id PK_FK
+        int job_id PK
+        int skill_id PK
         string required_level
     }
 
@@ -95,7 +95,7 @@ erDiagram
 
     PLACEMENTS {
         int id PK
-        int student_id FK_UK
+        int student_id UK
         int job_id FK
         int company_id FK
         numeric package
