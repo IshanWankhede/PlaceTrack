@@ -7,6 +7,7 @@ import Input from '../components/ui/Input.jsx';
 import Button from '../components/ui/Button.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import api from '../services/api.js';
+import authService from '../services/authService.js';
 import {
   ArrowRight,
   ArrowLeft,
@@ -131,7 +132,6 @@ export default function AuthPage() {
   const handleSignupStart = async (e) => {
     e.preventDefault();
     const errs = {};
-    if (!fullName.trim()) errs.fullName = 'Full name is required';
     if (!rollNumber.trim()) errs.rollNumber = 'Roll number is required';
     if (!signupEmail || !signupEmail.includes('@'))
       errs.signupEmail = 'Enter a valid college email';
@@ -140,12 +140,12 @@ export default function AuthPage() {
     setLoading(true);
     setErrors({});
     try {
-      await api.post('/auth/otp/request', { email: signupEmail.trim() });
+      await authService.requestSignupOtp(rollNumber.trim(), signupEmail.trim());
       setLoading(false);
       setMode('otp');
       setOtp(['', '', '', '', '', '']);
       setOtpTimer(60);
-      showToast(`OTP sent to ${signupEmail}!`);
+      showToast(`Verification code sent to ${signupEmail}!`);
       setTimeout(() => otpRefs[0].current?.focus(), 100);
     } catch (err) {
       setLoading(false);
@@ -164,25 +164,12 @@ export default function AuthPage() {
       setErrors({ otp: 'Enter all 6 digits' });
       return;
     }
-    setLoading(true);
     setErrors({});
-    try {
-      await api.post('/auth/otp/verify', {
-        email: signupEmail.trim(),
-        otp: entered,
-      });
-      setLoading(false);
-      setMode('signup_password');
-      showToast('Email verified! Set your password.');
-    } catch (err) {
-      setLoading(false);
-      setErrors({
-        otp: err.response?.data?.detail || 'Invalid OTP. Try again.',
-      });
-    }
+    setMode('signup_password');
+    showToast('Code entered! Set your password to complete registration.');
   };
 
-  // ── Signup Step 3: set password & create account ──────────────────────────
+  // ── Signup Step 3: set password & verify via backend ─────────────────────
   const handleCompleteSignup = async (e) => {
     e.preventDefault();
     const errs = {};
@@ -195,16 +182,13 @@ export default function AuthPage() {
     setLoading(true);
     setErrors({});
     try {
-      // Register account on backend
-      await api.post('/auth/register', {
-        email: signupEmail.trim(),
-        full_name: fullName.trim(),
-        roll_number: rollNumber.trim(),
-        department,
-        password: signupPassword,
-        otp: otp.join(''),
-      });
-      // Auto-login
+      // Call backend signup verify endpoint
+      await authService.verifySignup(
+        signupEmail.trim(),
+        otp.join(''),
+        signupPassword
+      );
+      // Log in with the newly set password
       const user = await login(signupEmail.trim(), signupPassword);
       setLoading(false);
       setSuccess(true);
@@ -234,7 +218,7 @@ export default function AuthPage() {
     setErrors({});
     setLoading(true);
     try {
-      await api.post('/auth/otp/request', { email: forgotEmail.trim() });
+      await authService.forgotPassword(forgotEmail.trim());
       setForgotOtp(['', '', '', '', '', '']);
       setForgotTimer(60);
       setForgotStep(2);
@@ -253,19 +237,8 @@ export default function AuthPage() {
       setErrors({ forgotOtp: 'Enter all 6 digits' });
       return;
     }
-    setLoading(true);
     setErrors({});
-    try {
-      await api.post('/auth/otp/verify', {
-        email: forgotEmail.trim(),
-        otp: entered,
-      });
-      setLoading(false);
-      setForgotStep(3);
-    } catch (err) {
-      setLoading(false);
-      setErrors({ forgotOtp: err.response?.data?.detail || 'Invalid OTP.' });
-    }
+    setForgotStep(3);
   };
 
   const handleForgotResetPassword = async (e) => {
@@ -277,11 +250,11 @@ export default function AuthPage() {
     setLoading(true);
     setErrors({});
     try {
-      await api.post('/auth/reset-password', {
-        email: forgotEmail.trim(),
-        otp: forgotOtp.join(''),
-        new_password: newPassword,
-      });
+      await authService.resetPassword(
+        forgotEmail.trim(),
+        forgotOtp.join(''),
+        newPassword
+      );
       setLoading(false);
       showToast('Password updated! You can now log in.');
       setEmail(forgotEmail);

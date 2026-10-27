@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import offersService from '../../services/offersService.js';
+import placementsService from '../../services/placementsService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import {
@@ -23,9 +24,10 @@ export default function StudentMyPlacement() {
   const { user, showToast } = useAuth();
   const toast = useToast();
   const [offers, setOffers] = useState([]);
-  const [policies, setPolicies] = useState(null);
+  const [placement, setPlacement] = useState(null);
   const [selectedOfferId, setSelectedOfferId] = useState(null);
   const [decisionNote, setDecisionNote] = useState('');
+  const [loading, setLoading] = useState(true);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     offer: null,
@@ -42,17 +44,23 @@ export default function StudentMyPlacement() {
   };
 
   const loadData = async () => {
-    const studentId = user?.id || 'student-rohit';
-    const [studentOffers, policyData] = await Promise.all([
-      mockApi.getOffers(studentId),
-      mockApi.getPolicies(),
-    ]);
-    setOffers(studentOffers);
-    setPolicies(policyData);
-    setSelectedOfferId((prev) => {
-      if (prev && studentOffers.some((o) => o.id === prev)) return prev;
-      return studentOffers[0]?.id || null;
-    });
+    setLoading(true);
+    try {
+      const [studentOffers, myPlacement] = await Promise.all([
+        offersService.getMyOffers().catch(() => []),
+        placementsService.getMyPlacement().catch(() => null),
+      ]);
+      setOffers(studentOffers || []);
+      setPlacement(myPlacement);
+      setSelectedOfferId((prev) => {
+        if (prev && studentOffers.some((o) => o.offer_id === prev)) return prev;
+        return studentOffers[0]?.offer_id || null;
+      });
+    } catch (err) {
+      console.error('Failed to load placement/offers:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -65,35 +73,27 @@ export default function StudentMyPlacement() {
     if (!offer || !action) return;
 
     try {
-      const updated = await mockApi.updateOfferStatus(offer.id, action, {
-        isStudentDecision: true,
-        actor: `${user?.name || 'Rohit Verma'} (Student)`,
-        explanation:
-          decisionNote.trim() ||
-          (action === 'ACCEPTED'
-            ? `Accepted ${offer.company} (${offer.tier} Tier · ${offer.package_lpa} LPA) offer under university placement policy.`
-            : `Declined ${offer.company} (${offer.tier} Tier) offer.`),
-      });
+      if (action === 'ACCEPTED') {
+        await offersService.acceptOffer(offer.offer_id);
+        fireConfetti();
+        toast.placement(
+          `Offer Accepted: ${offer.company}`,
+          `Confirmed ${offer.package} LPA (${offer.tier} Tier) — placement recorded!`
+        );
+      } else {
+        await offersService.declineOffer(offer.offer_id);
+        toast.warning(
+          `Offer Declined: ${offer.company}`,
+          `You have formally declined the ${offer.company} offer.`
+        );
+      }
       await loadData();
       setConfirmModal({ isOpen: false, offer: null, action: null });
       setDecisionNote('');
-
-      if (action === 'ACCEPTED') {
-        fireConfetti();
-        toast.placement(
-          `Offer Accepted: ${updated.company}`,
-          `Confirmed ${updated.package_lpa} LPA (${updated.tier} Tier) — Synced across Application Timeline`
-        );
-      } else {
-        toast.warning(
-          `Offer Declined: ${updated.company}`,
-          `You have formally declined the ${updated.company} offer.`
-        );
-      }
     } catch (err) {
-      toast.warning(
+      toast.error(
         'Action Blocked by Placement Policy',
-        err?.message || 'This offer decision is not permitted by the current placement policy.'
+        err.response?.data?.detail || err.message || 'This offer decision is not permitted by placement policy.'
       );
       setConfirmModal({ isOpen: false, offer: null, action: null });
     }
@@ -107,12 +107,18 @@ export default function StudentMyPlacement() {
   };
 
   const activeOffer =
-    offers.find((o) => o.id === selectedOfferId) || offers[0];
+    offers.find((o) => (o.offer_id || o.id) === selectedOfferId) || offers[0];
+
+  const activeOfferStatus = activeOffer?.status || activeOffer?.offer_status || 'PENDING';
+  const activeOfferPackage = Number(activeOffer?.package || activeOffer?.package_lpa || 0).toFixed(2);
+  const activeOfferBase = Number(activeOffer?.base_lpa || 0).toFixed(2);
+  const activeOfferBonus = Number(activeOffer?.bonus_lpa || 0).toFixed(2);
+  const activeOfferEsop = Number(activeOffer?.esop_lpa || activeOffer?.esop_value || 0).toFixed(2);
 
   const policyEval = activeOffer?.policy_evaluation || {
-    can_accept: activeOffer?.offer_status === 'PENDING',
-    can_decline: activeOffer?.offer_status === 'PENDING',
-    is_decided: activeOffer?.offer_status !== 'PENDING',
+    can_accept: activeOfferStatus === 'PENDING',
+    can_decline: activeOfferStatus === 'PENDING',
+    is_decided: activeOfferStatus !== 'PENDING',
     is_upgrade: false,
     supersedes_offer: null,
     lock_reason: null,
@@ -154,56 +160,82 @@ export default function StudentMyPlacement() {
         </button>
       </div>
 
+      {/* Verified Placement Record Card if Placed */}
+      {placement && (
+        <div className="p-6 rounded-3xl bg-emerald-950 text-white border border-emerald-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
+                Official Placement Confirmed
+              </span>
+              <h3 className="font-display font-extrabold text-xl text-white">
+                {placement.company} — {placement.job_role}
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Verified package: <strong className="text-emerald-300">{Number(placement.package).toFixed(2)} LPA</strong> · Enrolled: {placement.placement_date}
+              </p>
+            </div>
+          </div>
+          <span className="px-4 py-2 rounded-full bg-emerald-500 text-slate-950 font-black text-xs">
+            PLACED
+          </span>
+        </div>
+      )}
+
       {/* Configured Institutional Offer Policy Banner */}
       <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="text-xs text-amber-900">
             <p className="font-bold">
-              Configured CDC Offer Policy: Single-offer policy with Dream-to-Super-Dream Tier Upgrade{' '}
-              {policies?.allow_dream_upgrade !== false ? '(Enabled)' : '(Strict Single-Offer)'}
+              Configured CDC Offer Policy: Single-offer policy with Dream-to-Super-Dream Tier Upgrade
             </p>
             <p className="text-[11px] text-amber-800 mt-0.5">
-              Tier hierarchy: Core &lt; Dream &lt; Super Dream. Duplicate decisions on decided offers are permanently locked. Accepting a higher-tier offer automatically supersedes a lower-tier accepted offer.
+              Tier hierarchy: Core &lt; Dream &lt; Super Dream. Accepting a higher-tier offer automatically supersedes a lower-tier accepted offer.
             </p>
           </div>
         </div>
-        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-100 text-amber-900">
-          Max Offers Allowed: {policies?.max_offers_per_student || 2}
-        </span>
       </div>
 
       {/* Offer Selector Tabs if student has multiple offers */}
       {offers.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
-          {offers.map((off) => (
-            <button
-              key={off.id}
-              type="button"
-              onClick={() => setSelectedOfferId(off.id)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2 ${
-                activeOffer?.id === off.id
-                  ? 'bg-[#0B0B0F] text-white border-[#0B0B0F] shadow-sm'
-                  : 'bg-white text-[#475569] border-black/10 hover:border-black/25'
-              }`}
-            >
-              <span>{off.company}</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-white/15">
-                {off.tier} · {off.package_lpa} LPA
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] ${
-                  off.offer_status === 'ACCEPTED'
-                    ? 'bg-emerald-500 text-white'
-                    : off.offer_status === 'DECLINED' || off.offer_status === 'EXPIRED'
-                    ? 'bg-rose-500 text-white'
-                    : 'bg-amber-400 text-black'
+          {offers.map((off) => {
+            const offId = off.offer_id || off.id;
+            const offStatus = off.status || off.offer_status || 'PENDING';
+            const offPkg = Number(off.package || off.package_lpa || 0).toFixed(2);
+            return (
+              <button
+                key={offId}
+                type="button"
+                onClick={() => setSelectedOfferId(offId)}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                  (activeOffer?.offer_id || activeOffer?.id) === offId
+                    ? 'bg-[#0B0B0F] text-white border-[#0B0B0F] shadow-sm'
+                    : 'bg-white text-[#475569] border-black/10 hover:border-black/25'
                 }`}
               >
-                {formatStatusLabel(off.offer_status)}
-              </span>
-            </button>
-          ))}
+                <span>{off.company}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-white/15">
+                  {off.tier} · {offPkg} LPA
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] ${
+                    offStatus === 'ACCEPTED'
+                      ? 'bg-emerald-500 text-white'
+                      : offStatus === 'DECLINED' || offStatus === 'EXPIRED'
+                      ? 'bg-rose-500 text-white'
+                      : 'bg-amber-400 text-black'
+                  }`}
+                >
+                  {formatStatusLabel(offStatus)}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -219,52 +251,45 @@ export default function StudentMyPlacement() {
               <div className="flex items-center gap-2 flex-wrap">
                 <div
                   className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold ${
-                    activeOffer.offer_status === 'ACCEPTED'
+                    activeOfferStatus === 'ACCEPTED'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      : activeOffer.offer_status === 'DECLINED' ||
-                        activeOffer.offer_status === 'EXPIRED'
+                      : activeOfferStatus === 'DECLINED' ||
+                        activeOfferStatus === 'EXPIRED'
                       ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                   }`}
                 >
-                  {activeOffer.offer_status === 'ACCEPTED' ? (
+                  {activeOfferStatus === 'ACCEPTED' ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  ) : activeOffer.offer_status === 'DECLINED' ||
-                    activeOffer.offer_status === 'EXPIRED' ? (
+                  ) : activeOfferStatus === 'DECLINED' ||
+                    activeOfferStatus === 'EXPIRED' ? (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   ) : (
                     <Clock className="w-4 h-4 text-amber-400" />
                   )}
-                  <span>Status: {formatStatusLabel(activeOffer.offer_status)}</span>
+                  <span>Status: {formatStatusLabel(activeOfferStatus)}</span>
                 </div>
 
                 <span className="px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/30 text-violet-200 text-xs font-bold">
                   {activeOffer.tier} Tier
                 </span>
-
-                {policyEval.is_upgrade && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-xs font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    Eligible Higher-Tier Upgrade (Supersedes {policyEval.supersedes_offer})
-                  </span>
-                )}
               </div>
 
               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
-                OFFER #{activeOffer.id.toUpperCase()}-2026
+                OFFER #{activeOffer.offer_id || activeOffer.id}
               </span>
             </div>
 
             {/* Main Title & Company */}
             <div className="space-y-2">
               <span className="text-xs uppercase tracking-widest font-bold text-amber-300">
-                Total Compensation: {activeOffer.package_lpa} LPA
+                Total Compensation: {activeOfferPackage} LPA
               </span>
               <h1 className="font-display font-black text-3xl sm:text-4xl md:text-5xl text-white tracking-tight">
                 {activeOffer.company}
               </h1>
               <p className="text-sm md:text-base text-slate-300 font-medium">
-                {activeOffer.job_role} (Full-Time)
+                {activeOffer.job_title || activeOffer.job_role || 'Software Engineering'} (Full-Time)
               </p>
             </div>
 
@@ -272,10 +297,10 @@ export default function StudentMyPlacement() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/10">
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
                 <span className="text-[11px] font-semibold text-slate-400 uppercase block">
-                  Base Salary (base_lpa)
+                  Base Salary
                 </span>
                 <span className="font-display font-black text-3xl text-white tracking-tight tabular-nums">
-                  {activeOffer.base_lpa} LPA
+                  {activeOfferBase} LPA
                 </span>
                 <span className="text-[11px] text-slate-400 block mt-0.5">
                   Fixed annual cash
@@ -284,22 +309,22 @@ export default function StudentMyPlacement() {
 
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
                 <span className="text-[11px] font-semibold text-slate-400 uppercase block">
-                  Joining & Performance Bonus (bonus_lpa)
+                  Performance Bonus
                 </span>
                 <span className="font-display font-bold text-2xl text-emerald-400 tracking-tight tabular-nums">
-                  {activeOffer.bonus_lpa} LPA
+                  {activeOfferBonus} LPA
                 </span>
                 <span className="text-[11px] text-slate-400 block mt-0.5">
-                  Year-1 guaranteed variable
+                  Annual performance variable
                 </span>
               </div>
 
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
                 <span className="text-[11px] font-semibold text-slate-400 uppercase block">
-                  ESOP / Equity Grant (esop_value)
+                  ESOP / Equity Grant
                 </span>
                 <span className="font-display font-bold text-2xl text-amber-300 tracking-tight tabular-nums">
-                  {activeOffer.esop_value} LPA
+                  {activeOfferEsop} LPA
                 </span>
                 <span className="text-[11px] text-slate-400 block mt-0.5">
                   Vested equity allocation

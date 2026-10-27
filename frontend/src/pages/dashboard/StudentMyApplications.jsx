@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import GlassCard from '../../components/ui/GlassCard.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
-import ApplicationTimeline from '../../components/ui/ApplicationTimeline.jsx';
-import { MeetingLinkButton } from '../../components/ui/MeetingLinkButton.jsx';
-import { ContactActionButtons } from '../../components/ui/ContactActionButtons.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import applicationsService from '../../services/applicationsService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 import {
   Calendar,
   Clock,
@@ -16,469 +13,285 @@ import {
   MapPin,
   ExternalLink,
   Users,
-  Sparkles,
   Search,
-  Filter,
-  ArrowUpDown,
   Eye,
-  Video,
   Building2,
-  ShieldCheck,
+  XCircle,
   AlertCircle,
-  ArrowRight,
-  Award,
+  ShieldCheck,
+  Video,
 } from 'lucide-react';
 
 export default function StudentMyApplications() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const toast = useToast();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Search, Filter & Sort state
+  // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [tierFilter, setTierFilter] = useState('ALL');
-  const [sortBy, setSortBy] = useState('LAST_UPDATED');
 
-  // Detail Modal State
+  // Modal
   const [selectedApp, setSelectedApp] = useState(null);
+  const [withdrawingId, setWithdrawingId] = useState(null);
+
+  const loadApplications = async () => {
+    setLoading(true);
+    try {
+      const data = await applicationsService.getMyApplications();
+      setApplications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load applications:', err);
+      toast.error('Failed to load applications', err.response?.data?.detail || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const allApps = await mockApi.getApplications();
-        const targetId = user?.id || 'student-rohit';
-        const studentApps = allApps.filter(
-          (a) => (a.student_id || a.studentId) === targetId
-        );
-        setApplications(studentApps);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    loadApplications();
+  }, [user?.student_id]);
+
+  const handleWithdraw = async (applicationId, companyName) => {
+    if (!window.confirm(`Are you sure you want to withdraw your application for ${companyName}?`)) {
+      return;
     }
-    load();
-  }, [user?.id]);
+    setWithdrawingId(applicationId);
+    try {
+      await applicationsService.withdrawApplication(applicationId);
+      toast.info('Application Withdrawn', `Withdrawn from ${companyName}`);
+      if (selectedApp && (selectedApp.application_id || selectedApp.id) === applicationId) {
+        setSelectedApp(null);
+      }
+      loadApplications();
+    } catch (err) {
+      toast.error('Withdrawal Failed', err.response?.data?.detail || err.message);
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
 
-  const filteredAndSortedApps = useMemo(() => {
-    return applications
-      .filter((app) => {
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const matchCompany = (app.company || '').toLowerCase().includes(q);
-          const matchTitle = (app.job?.title || '').toLowerCase().includes(q);
-          const matchId = (app.id || '').toLowerCase().includes(q);
-          const matchRound = (app.current_round || '').toLowerCase().includes(q);
-          if (!matchCompany && !matchTitle && !matchId && !matchRound) return false;
-        }
+  const filteredApps = useMemo(() => {
+    return applications.filter((app) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchComp = (app.company || '').toLowerCase().includes(q);
+        const matchTitle = (app.title || '').toLowerCase().includes(q);
+        if (!matchComp && !matchTitle) return false;
+      }
+      if (statusFilter !== 'ALL' && app.status !== statusFilter) return false;
+      if (tierFilter !== 'ALL' && app.tier !== tierFilter) return false;
+      return true;
+    });
+  }, [applications, searchQuery, statusFilter, tierFilter]);
 
-        if (statusFilter !== 'ALL') {
-          if (statusFilter === 'REVIEW') {
-            if (!['APPLIED', 'UNDER_REVIEW'].includes(app.status)) return false;
-          } else if (statusFilter === 'SHORTLISTED') {
-            if (!['SHORTLISTED', 'ASSESSMENT'].includes(app.status)) return false;
-          } else if (statusFilter === 'INTERVIEW') {
-            if (app.status !== 'INTERVIEW') return false;
-          } else if (statusFilter === 'OFFERS') {
-            if (
-              ![
-                'SELECTED',
-                'OFFER_RELEASED',
-                'OFFER_ACCEPTED',
-                'OFFER_DECLINED',
-                'OFFER_EXPIRED',
-              ].includes(app.status)
-            )
-              return false;
-          } else if (statusFilter === 'REJECTED') {
-            if (app.status !== 'REJECTED') return false;
-          }
-        }
-
-        if (tierFilter !== 'ALL') {
-          const appTier = app.job?.tier || app.linked_offer?.tier || 'Dream';
-          if (appTier !== tierFilter) return false;
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'PACKAGE_DESC') {
-          return Number(b.job?.package_lpa || 0) - Number(a.job?.package_lpa || 0);
-        }
-        if (sortBy === 'APPLIED_DATE') {
-          return String(b.applied_date || '').localeCompare(String(a.applied_date || ''));
-        }
-        if (sortBy === 'COMPANY_AZ') {
-          return String(a.company || '').localeCompare(String(b.company || ''));
-        }
-        // Default: LAST_UPDATED
-        return String(b.last_update || '').localeCompare(String(a.last_update || ''));
-      });
-  }, [applications, searchQuery, statusFilter, tierFilter, sortBy]);
-
-  if (loading) {
-    return (
-      <div className="h-96 flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-violet-600 border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  const canWithdraw = (status) => !['SELECTED', 'REJECTED', 'WITHDRAWN'].includes(status);
 
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
-            Student Application & Stage Tracker
-          </span>
-          <h2 className="font-display font-bold text-2xl text-[#0B0B0F] mt-1">
-            My Applications ({user?.name || 'Rohit Verma'})
+          <h2 className="font-display font-extrabold text-2xl text-[#0B0B0F] tracking-tight">
+            My Campus Applications
           </h2>
-          <p className="text-xs text-[#64748B]">
-            Real-time recruitment progress, drive-specific stage timelines, next required actions, upcoming interviews, and status history
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Track interview rounds, reporting schedules, venues, and live application statuses ({filteredApps.length} applications).
           </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Calendar}
-            onClick={() => navigate('/dashboard/my-interviews')}
-          >
-            My Interview Calendar
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Award}
-            onClick={() => navigate('/dashboard/my-placement')}
-          >
-            Review My Offers
-          </Button>
         </div>
       </div>
 
-      {/* Search, Filter & Sort Controls */}
-      <GlassCard variant="white" className="p-4 sm:p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-          {/* Search Input */}
-          <div className="md:col-span-5 relative">
-            <Search className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by company, role, application ID, or active round..."
-              className="w-full pl-9 pr-4 py-2 rounded-2xl bg-[#F9F9FB] border border-black/10 text-xs font-medium text-[#0B0B0F] placeholder:text-[#94A3B8] focus:outline-none focus:border-violet-600"
-            />
-          </div>
+      {/* Filter and Search Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-black/5 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-xs font-semibold bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] focus:outline-none"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="APPLIED">Applied</option>
+            <option value="SHORTLISTED">Shortlisted</option>
+            <option value="INTERVIEW">In Interview</option>
+            <option value="SELECTED">Selected</option>
+            <option value="REJECTED">Rejected</option>
+            <option value="WITHDRAWN">Withdrawn</option>
+          </select>
 
-          {/* Tier Filter */}
-          <div className="md:col-span-3 flex items-center gap-2">
-            <Filter className="w-3.5 h-3.5 text-[#64748B] flex-shrink-0" />
-            <select
-              value={tierFilter}
-              onChange={(e) => setTierFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-2xl bg-[#F9F9FB] border border-black/10 text-xs font-semibold text-[#0B0B0F] outline-none"
-            >
-              <option value="ALL">All Drive Tiers</option>
-              <option value="Super Dream">Super Dream Tier</option>
-              <option value="Dream">Dream Tier</option>
-              <option value="Core">Core Tier</option>
-            </select>
-          </div>
-
-          {/* Sort By */}
-          <div className="md:col-span-4 flex items-center gap-2">
-            <ArrowUpDown className="w-3.5 h-3.5 text-[#64748B] flex-shrink-0" />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="w-full px-3 py-2 rounded-2xl bg-[#F9F9FB] border border-black/10 text-xs font-semibold text-[#0B0B0F] outline-none"
-            >
-              <option value="LAST_UPDATED">Sort: Last Updated (Newest)</option>
-              <option value="APPLIED_DATE">Sort: Application Date</option>
-              <option value="PACKAGE_DESC">Sort: Highest Package (LPA)</option>
-              <option value="COMPANY_AZ">Sort: Company Name (A–Z)</option>
-            </select>
-          </div>
+          <select
+            value={tierFilter}
+            onChange={(e) => setTierFilter(e.target.value)}
+            className="text-xs font-semibold bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] focus:outline-none"
+          >
+            <option value="ALL">All Tiers</option>
+            <option value="CORE">CORE Tier</option>
+            <option value="DREAM">DREAM Tier</option>
+            <option value="SUPER_DREAM">SUPER_DREAM Tier</option>
+          </select>
         </div>
 
-        {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-black/5">
-          {[
-            { id: 'ALL', label: `All Applications (${applications.length})` },
-            { id: 'REVIEW', label: 'Applied / Under Review' },
-            { id: 'SHORTLISTED', label: 'Shortlisted / Assessment' },
-            { id: 'INTERVIEW', label: 'In Interview' },
-            { id: 'OFFERS', label: 'Selected / Offers' },
-            { id: 'REJECTED', label: 'Rejected' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                statusFilter === tab.id
-                  ? 'bg-[#0B0B0F] text-white shadow-xs'
-                  : 'bg-[#F4F4F7] text-[#64748B] hover:text-[#0B0B0F]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </GlassCard>
+        <input
+          type="text"
+          placeholder="Search company or job title..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="text-xs bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] w-48 sm:w-64 focus:outline-none focus:border-[#0B0B0F]"
+        />
+      </div>
 
       {/* Applications List */}
-      {filteredAndSortedApps.length === 0 ? (
-        <GlassCard variant="white" className="p-10 text-center space-y-3">
-          <p className="font-display font-bold text-base text-[#0B0B0F]">
-            No matching applications found
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2].map((i) => (
+            <div key={i} className="h-44 rounded-3xl bg-slate-100 animate-pulse border border-black/5" />
+          ))}
+        </div>
+      ) : filteredApps.length === 0 ? (
+        <GlassCard variant="white" className="p-12 text-center space-y-3">
+          <Building2 className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="font-display font-bold text-base text-[#0B0B0F]">No applications found</p>
+          <p className="text-xs text-[#64748B] max-w-sm mx-auto">
+            Browse available placement drives to apply for matching corporate opportunities.
           </p>
-          <p className="text-xs text-[#64748B] max-w-md mx-auto">
-            Try clearing your search or status filter, or browse open campus drives to submit a new application.
-          </p>
-          <div className="pt-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setSearchQuery('');
-                setStatusFilter('ALL');
-                setTierFilter('ALL');
-              }}
-            >
-              Reset Filters
-            </Button>
-          </div>
         </GlassCard>
       ) : (
-        <div className="space-y-6">
-          {filteredAndSortedApps.map((app) => {
-            const elig = app.eligibility || { eligible: true, matchPercent: 92 };
-            const nextAction = app.next_required_action || {};
-            const upcomingInt = app.upcoming_interview;
+        <div className="space-y-4">
+          {filteredApps.map((app) => {
+            const appId = app.application_id || app.id;
+            const interviews = app.interviews || [];
+            const isNonFinal = canWithdraw(app.status);
 
             return (
-              <GlassCard
-                key={app.id}
-                variant="white"
-                className="p-6 md:p-7 space-y-6"
-              >
-                {/* Top Row: Company, Job Title, Eligibility, Package & Status */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <GlassCard key={appId} variant="white" className="p-6 md:p-7 space-y-5">
+                {/* Top Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start sm:items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-100 to-indigo-100 flex items-center justify-center font-display font-black text-sm text-violet-700 flex-shrink-0">
-                      {app.company.slice(0, 2).toUpperCase()}
+                    <div className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center font-display font-black text-sm">
+                      {app.company?.slice(0, 2).toUpperCase()}
                     </div>
-                    <div className="space-y-1">
+                    <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                          {app.job?.title}
+                          {app.title}
                         </h3>
                         <span className="text-xs font-bold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full">
                           {app.company}
                         </span>
-                        <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                          {app.job?.tier || 'Dream'} Tier
+                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {app.tier} Tier
                         </span>
                       </div>
-
-                      <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
-                        <span>
-                          App ID: <strong className="font-mono text-[#0B0B0F]">{app.id}</strong>
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span>
-                          Applied: <strong className="text-[#0B0B0F]">{app.applied_date}</strong>
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span>
-                          Last Updated: <strong className="text-[#0B0B0F]">{app.last_update}</strong>
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span
-                          className={`inline-flex items-center gap-1 font-bold ${
-                            elig.eligible ? 'text-emerald-700' : 'text-amber-700'
-                          }`}
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          {elig.eligible
-                            ? `Eligible (${elig.matchPercent}% Match)`
-                            : `Eligibility Warning (${elig.matchPercent}% Match)`}
-                        </span>
-                      </div>
+                      <p className="text-xs text-[#64748B] mt-0.5">
+                        Applied: {app.applied_date} · Package: <strong className="text-[#0B0B0F]">{Number(app.package).toFixed(2)} LPA</strong>
+                        {app.location && ` · Location: ${app.location}`}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-display font-bold text-base text-[#0B0B0F] bg-[#F4F4F7] px-3.5 py-1 rounded-full tabular-nums">
-                      {app.job?.package_lpa} LPA
-                    </span>
+                  <div className="flex items-center gap-3">
                     <StatusBadge status={app.status} size="md" />
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={Eye}
-                      onClick={() => setSelectedApp(app)}
-                    >
-                      View Details
+                    {isNonFinal && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleWithdraw(appId, app.company)}
+                        loading={withdrawingId === appId}
+                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      >
+                        Withdraw
+                      </Button>
+                    )}
+                    <Button variant="secondary" size="sm" icon={Eye} onClick={() => setSelectedApp(app)}>
+                      Details
                     </Button>
                   </div>
                 </div>
 
-                {/* Next Required Action & Upcoming Interview Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  {/* Next Required Action Card */}
-                  <div
-                    className={`${
-                      upcomingInt ? 'lg:col-span-6' : 'lg:col-span-12'
-                    } p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
-                      nextAction.urgent
-                        ? 'bg-amber-50/70 border-amber-200/90'
-                        : 'bg-violet-50/50 border-violet-200/70'
-                    }`}
-                  >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-800 flex items-center gap-1.5">
-                          <AlertCircle className="w-3.5 h-3.5 text-violet-600" />
-                          Next Required Action
-                        </span>
-                        {nextAction.badge && (
-                          <span
-                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                              nextAction.urgent
-                                ? 'bg-amber-200/80 text-amber-950'
-                                : 'bg-violet-100 text-violet-800'
+                {/* Round Tracker */}
+                <div className="pt-3 border-t border-black/5">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] mb-2 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-violet-600" />
+                    Interview Rounds ({interviews.length})
+                  </h4>
+
+                  {interviews.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No interview rounds scheduled yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {interviews.map((iv) => {
+                        const isCleared = iv.result === 'CLEARED';
+                        const isRejected = iv.result === 'REJECTED';
+                        return (
+                          <div
+                            key={iv.round_number}
+                            className={`p-3 rounded-2xl border text-xs space-y-1.5 ${
+                              isCleared
+                                ? 'bg-emerald-50/60 border-emerald-200'
+                                : isRejected
+                                ? 'bg-rose-50/60 border-rose-200'
+                                : 'bg-slate-50 border-black/5'
                             }`}
                           >
-                            {nextAction.badge}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="font-display font-bold text-sm text-[#0B0B0F]">
-                        {nextAction.title}
-                      </h4>
-                      <p className="text-xs text-[#475569] leading-relaxed">
-                        {nextAction.description}
-                      </p>
-                    </div>
-
-                    {nextAction.cta_route && (
-                      <div className="pt-1 flex items-center justify-end">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          icon={ArrowRight}
-                          iconPosition="right"
-                          onClick={() => navigate(nextAction.cta_route)}
-                        >
-                          {nextAction.cta_label || 'Take Action'}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Upcoming / Latest Interview Info Card */}
-                  {upcomingInt && (
-                    <div className="lg:col-span-6 p-4 rounded-2xl bg-[#F9F9FB] border border-black/8 flex flex-col justify-between gap-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0B0B0F] flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-violet-600" />
-                            Interview Schedule · {upcomingInt.round_name}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                upcomingInt.mode === 'IN_PERSON'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}
-                            >
-                              {upcomingInt.mode === 'IN_PERSON' ? 'In-Person' : 'Online'}
-                            </span>
-                            <StatusBadge status={upcomingInt.result || 'PENDING'} size="sm" />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-[#475569]">
-                          <p className="flex items-center gap-1.5 font-semibold text-[#0B0B0F]">
-                            <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                            <span>
-                              {upcomingInt.date} · {upcomingInt.reporting_time}{' '}
-                              <span className="text-[10px] text-[#64748B]">
-                                ({upcomingInt.timezone || 'IST (UTC+5:30)'})
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[#0B0B0F]">
+                                Round {iv.round_number}: {iv.round_type?.replace('_', ' ')}
                               </span>
-                            </span>
-                          </p>
-                          <p className="flex items-center gap-1.5 truncate">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                            <span className="truncate" title={upcomingInt.venue}>
-                              {upcomingInt.venue}
-                            </span>
-                          </p>
-                        </div>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isCleared
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : isRejected
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {iv.result || 'SCHEDULED'}
+                              </span>
+                            </div>
 
-                        <p className="text-[11px] text-[#64748B] flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5 text-violet-600 flex-shrink-0" />
-                          <span>
-                            Assigned Panel:{' '}
-                            <strong className="text-[#0B0B0F]">
-                              {Array.isArray(upcomingInt.panelists)
-                                ? upcomingInt.panelists.join(', ')
-                                : upcomingInt.interviewer}
-                            </strong>
-                          </span>
-                        </p>
-                      </div>
+                            <p className="text-[#64748B] text-[11px]">
+                              Time: <strong className="text-[#0B0B0F]">{iv.scheduled_at?.replace('T', ' ')}</strong>
+                              {iv.reporting_time && ` (Reporting: ${iv.reporting_time})`}
+                            </p>
 
-                      <div className="pt-2 border-t border-black/5 flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-[#64748B]">
-                          Attendance:{' '}
-                          <strong className="text-[#0B0B0F]">
-                            {upcomingInt.attendance || 'SCHEDULED'}
-                          </strong>
-                        </span>
-                        <MeetingLinkButton interview={upcomingInt} compact />
-                      </div>
+                            {iv.venue && (
+                              <p className="text-[#64748B] text-[11px] flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-slate-400" />
+                                Venue: {iv.venue}
+                              </p>
+                            )}
+
+                            {iv.meeting_link && (
+                              <a
+                                href={iv.meeting_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:underline"
+                              >
+                                <Video className="w-3 h-3" />
+                                Join Interview Bridge
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+
+                            {iv.panelists && (
+                              <p className="text-[10px] text-slate-400">
+                                Panelists: {iv.panelists}
+                              </p>
+                            )}
+
+                            {iv.remarks && (
+                              <p className="text-[11px] text-slate-600 italic bg-white/70 p-1.5 rounded-lg border border-black/5">
+                                Remarks: &ldquo;{iv.remarks}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                </div>
-
-                {/* Drive-Specific Application Timeline */}
-                <ApplicationTimeline
-                  stages={app.timeline_stages}
-                  statusHistory={app.status_history}
-                  showHistory={false}
-                />
-
-                {/* Bottom Recruiter / TPO Explanation Footer */}
-                <div className="pt-2 border-t border-black/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-start gap-2">
-                    <Sparkles className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-[#64748B]">
-                      <strong className="text-[#0B0B0F]">Latest Stage Note: </strong>
-                      {app.feedback}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedApp(app)}
-                    className="text-xs font-bold text-violet-700 hover:text-violet-900 inline-flex items-center gap-1 self-start sm:self-auto"
-                  >
-                    <span>View Full History & Eligibility ({app.status_history?.length || 1} events)</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </GlassCard>
             );
@@ -486,135 +299,52 @@ export default function StudentMyApplications() {
         </div>
       )}
 
-      {/* Application Full Detail Modal */}
+      {/* Detail Drawer Modal */}
       <Modal
         isOpen={Boolean(selectedApp)}
         onClose={() => setSelectedApp(null)}
-        title={
-          selectedApp
-            ? `${selectedApp.company} — ${selectedApp.job?.title}`
-            : 'Application Details'
-        }
-        subtitle={
-          selectedApp
-            ? `Application ID: ${selectedApp.id} · Applied on ${selectedApp.applied_date} · Last Updated: ${selectedApp.last_update}`
-            : ''
-        }
+        title={selectedApp ? `${selectedApp.company} — ${selectedApp.title}` : 'Application Details'}
+        maxWidth="max-w-lg"
       >
         {selectedApp && (
-          <div className="space-y-5">
-            {/* Summary Banner */}
-            <div className="p-4 rounded-2xl bg-[#F9F9FB] border border-black/5 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <span className="text-[10px] font-bold uppercase text-[#64748B] block">
-                  Current Application Stage
+          <div className="space-y-4 pt-2 text-xs">
+            <div className="p-4 rounded-2xl bg-[#F6F6F8] space-y-2">
+              <div className="flex justify-between">
+                <span className="text-[#64748B]">Application ID:</span>
+                <span className="font-mono font-bold text-[#0B0B0F]">
+                  #{selectedApp.application_id || selectedApp.id}
                 </span>
-                <p className="font-display font-bold text-base text-[#0B0B0F]">
-                  {selectedApp.current_round} ({selectedApp.job?.tier || 'Dream'} Tier ·{' '}
-                  {selectedApp.job?.package_lpa} LPA)
-                </p>
               </div>
-              <StatusBadge status={selectedApp.status} size="md" />
+              <div className="flex justify-between">
+                <span className="text-[#64748B]">Status:</span>
+                <StatusBadge status={selectedApp.status} size="sm" />
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#64748B]">Tier:</span>
+                <span className="font-bold text-[#0B0B0F]">{selectedApp.tier} Tier</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#64748B]">Package:</span>
+                <span className="font-bold text-emerald-600">{Number(selectedApp.package).toFixed(2)} LPA</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#64748B]">Date Applied:</span>
+                <span className="font-bold text-[#0B0B0F]">{selectedApp.applied_date}</span>
+              </div>
             </div>
 
-            {/* Next Required Action */}
-            {selectedApp.next_required_action && (
-              <div className="p-4 rounded-2xl bg-violet-50/70 border border-violet-200 space-y-1">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-800">
-                  Next Required Action
-                </span>
-                <p className="font-display font-bold text-sm text-[#0B0B0F]">
-                  {selectedApp.next_required_action.title}
-                </p>
-                <p className="text-xs text-[#475569]">
-                  {selectedApp.next_required_action.description}
-                </p>
-              </div>
-            )}
-
-            {/* Full Timeline & Status History */}
-            <ApplicationTimeline
-              stages={selectedApp.timeline_stages}
-              statusHistory={selectedApp.status_history}
-              showHistory={true}
-              compact={true}
-            />
-
-            {/* Eligibility Rule Breakdown */}
-            {selectedApp.eligibility?.rules && (
-              <div className="p-4 rounded-2xl bg-[#F9F9FB] border border-black/5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#0B0B0F]">
-                    Verified Eligibility Checklist
-                  </span>
-                  <span className="text-xs font-bold text-emerald-700">
-                    {selectedApp.eligibility.matchPercent}% Profile Match
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {selectedApp.eligibility.rules.map((r, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
-                        r.passed
-                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
-                          : 'bg-rose-50/60 border-rose-200 text-rose-950'
-                      }`}
-                    >
-                      <span className="font-semibold">{r.rule}</span>
-                      <span className="font-mono text-[11px]">
-                        {r.actual} / {r.required} ({r.passed ? 'Passed' : 'Failed'})
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Placement Cell Coordinator Contact Strip */}
-            <div className="p-3.5 rounded-2xl bg-[#F9F9FB] border border-black/5 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-[#0B0B0F]">
-                  Need clarification on this application stage?
-                </p>
-                <p className="text-[11px] text-[#64748B]">
-                  Contact Assigned TPO Coordinator: Raghav Menon (+91 98201 44510)
-                </p>
-              </div>
-              <ContactActionButtons
-                target={{
-                  id: 'staff-raghav',
-                  name: 'Raghav Menon',
-                  role: 'STAFF',
-                  phone: '+91 98201 44510',
-                  department: 'Central Placement Cell',
-                }}
-                compact
-              />
-            </div>
-
-            <div className="pt-2 flex justify-end gap-2">
-              {selectedApp.next_required_action?.cta_route && (
+            {canWithdraw(selectedApp.status) && (
+              <div className="pt-2">
                 <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    const route = selectedApp.next_required_action.cta_route;
-                    setSelectedApp(null);
-                    navigate(route);
-                  }}
+                  variant="secondary"
+                  size="md"
+                  onClick={() => handleWithdraw(selectedApp.application_id || selectedApp.id, selectedApp.company)}
+                  className="w-full text-rose-600 hover:bg-rose-50 border-rose-200"
                 >
-                  {selectedApp.next_required_action.cta_label || 'Open Related Page'}
+                  Withdraw from this recruitment drive
                 </Button>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setSelectedApp(null)}
-              >
-                Close
-              </Button>
-            </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

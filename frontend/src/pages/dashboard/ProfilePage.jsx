@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { mockApi } from '../../services/mockApi.js';
-import { SKILL_LEVELS } from '../../services/eligibility.js';
+import studentsService from '../../services/studentsService.js';
 import Lanyard from '../../components/ui/Lanyard.jsx';
 import { generateIdBadgeDataUrls } from '../../utils/idBadgeGenerator.js';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 import {
   User,
   ShieldCheck,
@@ -17,122 +17,101 @@ import {
   Plus,
   X,
   FileText,
-  ExternalLink,
-  Radio,
   Lock,
   QrCode,
   KeyRound,
   Download,
+  Radio,
 } from 'lucide-react';
 import { downloadDemoResumePdf } from '../../utils/offerPdfGenerator.js';
 import { validatePhoneNumber } from '../../utils/interactionHelpers.js';
 
+const SKILL_LEVELS = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
+
 export default function ProfilePage() {
-  const { user, setUser, activeRole, permissions, showToast } = useAuth();
+  const { user, setUser, activeRole, permissions } = useAuth();
+  const toast = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [cardFinish, setCardFinish] = useState('holographic');
   const [metalFinish, setMetalFinish] = useState('silver');
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const isStaffOrAdmin = activeRole === 'ADMIN' || activeRole === 'STAFF';
 
   const [formData, setFormData] = useState({
-    name:
-      user?.name ||
-      (activeRole === 'ADMIN'
-        ? 'Ishan Wankhede'
-        : activeRole === 'STAFF'
-        ? 'Raghav Menon'
-        : 'Rohit Verma'),
-    email:
-      user?.email ||
-      (activeRole === 'ADMIN'
-        ? 'ishan.cdc@placetrack.edu'
-        : activeRole === 'STAFF'
-        ? 'raghav.tpo@placetrack.edu'
-        : 'rohit.verma@example.edu'),
+    name: user?.name || 'Ishan Wankhede',
+    email: user?.email || 'user@example.com',
     phone: user?.phone || '+91 98112 33445',
-    resume_url:
-      user?.resume_url || 'https://placetrack.edu/resumes/21EC015_Rohit_Verma.pdf',
-    department:
-      user?.department ||
-      (isStaffOrAdmin ? 'Career Advancement Cell' : 'Electronics & Comm.'),
-    roll_number:
-      user?.roll_number ||
-      (activeRole === 'ADMIN'
-        ? 'CDC-DIR-001'
-        : activeRole === 'STAFF'
-        ? 'CDC-TPO-014'
-        : '21EC015'),
-    title:
-      user?.title ||
-      (activeRole === 'ADMIN'
-        ? 'Dean of Corporate Relations'
-        : activeRole === 'STAFF'
-        ? 'Senior Placement Coordinator (TPO)'
-        : 'B.Tech Final Year Candidate'),
-    cgpa: user?.cgpa ?? 8.2,
+    resume_url: user?.resume_url || 'https://placetrack.edu/resumes/resume.pdf',
+    department: user?.department || user?.department_name || (isStaffOrAdmin ? 'Corporate Relations' : 'Computer Science'),
+    roll_number: user?.roll_number || (activeRole === 'ADMIN' ? 'CDC-DIR-001' : activeRole === 'STAFF' ? 'CDC-TPO-014' : '2023CS001'),
+    title: user?.title || (activeRole === 'ADMIN' ? 'Placement Director' : activeRole === 'STAFF' ? 'Placement Officer' : 'B.Tech Student'),
+    cgpa: user?.cgpa ?? 8.5,
     cgpa_verified: user?.cgpa_verified ?? true,
     active_backlogs: user?.active_backlogs ?? 0,
+    student_id: user?.student_id || null,
   });
 
-  const [skillProficiencies, setSkillProficiencies] = useState(
-    user?.skill_proficiencies || [
-      { name: 'C++', level: 'Advanced' },
-      { name: 'Embedded C', level: 'Advanced' },
-      { name: 'RTOS', level: 'Intermediate' },
-      { name: 'Python', level: 'Advanced' },
-      { name: 'Docker', level: 'Advanced' },
-    ]
-  );
+  const [studentSkills, setStudentSkills] = useState([]);
+  const [selectedSkillId, setSelectedSkillId] = useState('');
+  const [selectedSkillLevel, setSelectedSkillLevel] = useState('INTERMEDIATE');
 
-  const [newSkillName, setNewSkillName] = useState('');
-  const [newSkillLevel, setNewSkillLevel] = useState('Intermediate');
-
-  // Sync when activeRole or user changes
+  // Load live student profile & available skills
   useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      name:
-        user?.name ||
-        (activeRole === 'ADMIN'
-          ? 'Ishan Wankhede'
-          : activeRole === 'STAFF'
-          ? 'Raghav Menon'
-          : 'Rohit Verma'),
-      email:
-        user?.email ||
-        (activeRole === 'ADMIN'
-          ? 'ishan.cdc@placetrack.edu'
-          : activeRole === 'STAFF'
-          ? 'raghav.tpo@placetrack.edu'
-          : 'rohit.verma@example.edu'),
-      phone: user?.phone || prev.phone,
-      resume_url: user?.resume_url || prev.resume_url,
-      department:
-        user?.department ||
-        (isStaffOrAdmin ? 'Career Advancement Cell' : 'Electronics & Comm.'),
-      roll_number:
-        user?.roll_number ||
-        (activeRole === 'ADMIN'
-          ? 'CDC-DIR-001'
-          : activeRole === 'STAFF'
-          ? 'CDC-TPO-014'
-          : '21EC015'),
-      title:
-        user?.title ||
-        (activeRole === 'ADMIN'
-          ? 'Dean of Corporate Relations'
-          : activeRole === 'STAFF'
-          ? 'Senior Placement Coordinator (TPO)'
-          : 'B.Tech Final Year Candidate'),
-      cgpa: user?.cgpa ?? 8.2,
-      cgpa_verified: user?.cgpa_verified ?? true,
-      active_backlogs: user?.active_backlogs ?? 0,
-    }));
-    if (user?.skill_proficiencies) {
-      setSkillProficiencies(user.skill_proficiencies);
+    let mounted = true;
+
+    async function fetchProfileData() {
+      try {
+        setLoading(true);
+        const [skillsList, studentProfile] = await Promise.all([
+          studentsService.getSkills().catch(() => []),
+          activeRole === 'STUDENT'
+            ? studentsService.getMe().catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        if (!mounted) return;
+        setAvailableSkills(Array.isArray(skillsList) ? skillsList : []);
+
+        if (skillsList.length > 0 && !selectedSkillId) {
+          setSelectedSkillId(String(skillsList[0].id));
+        }
+
+        if (studentProfile) {
+          setFormData({
+            name: studentProfile.name,
+            email: studentProfile.email,
+            phone: studentProfile.phone || '',
+            resume_url: studentProfile.resume_url || '',
+            department: studentProfile.department_name || studentProfile.department_code || 'Engineering',
+            roll_number: studentProfile.roll_number,
+            title: 'B.Tech Candidate',
+            cgpa: studentProfile.cgpa,
+            cgpa_verified: studentProfile.cgpa_verified,
+            active_backlogs: studentProfile.active_backlogs,
+            student_id: studentProfile.id,
+          });
+
+          const mappedSkills = (studentProfile.skills || []).map((s) => ({
+            skill_id: s.skill_id,
+            name: s.skill_name,
+            level: (s.proficiency_level || 'INTERMEDIATE').toUpperCase(),
+          }));
+          setStudentSkills(mappedSkills);
+        }
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     }
-  }, [user, activeRole, isStaffOrAdmin]);
+
+    fetchProfileData();
+    return () => {
+      mounted = false;
+    };
+  }, [activeRole]);
 
   // Dynamically generate ID card textures with QR derived from roll_number
   const badgeTextures = useMemo(() => {
@@ -147,80 +126,86 @@ export default function ProfilePage() {
     );
   }, [formData.name, formData.roll_number, formData.department, formData.cgpa, activeRole]);
 
+  // Save profile updates
   const handleSaveProfile = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const phoneCheck = validatePhoneNumber(formData.phone);
     if (!phoneCheck.valid) {
-      showToast(phoneCheck.reason || 'Please enter a valid phone number.');
+      toast.warning('Invalid Phone Number', phoneCheck.reason || 'Please enter a valid phone number.');
       return;
     }
-    const updatedPayload = {
-      name: formData.name,
-      email: formData.email,
-      phone: phoneCheck.sanitized,
-      resume_url: formData.resume_url,
-      ...(activeRole === 'STUDENT'
-        ? {
-            skill_proficiencies: skillProficiencies,
-            skills: skillProficiencies.map((s) => s.name),
-          }
-        : {}),
-    };
-    if (activeRole === 'STUDENT') {
-      await mockApi.updateStudentProfile(user?.id || 'student-rohit', updatedPayload);
-    } else {
-      await mockApi.updateUserAccount(user?.id, activeRole, updatedPayload);
+
+    try {
+      if (activeRole === 'STUDENT') {
+        await studentsService.updateMe({
+          phone: phoneCheck.sanitized,
+          resume_url: formData.resume_url,
+        });
+        toast.success('Profile Saved', 'Your contact and resume details have been updated.');
+      } else {
+        toast.info('Session Updated', 'Contact information updated.');
+      }
+      setIsEditing(false);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error('Update Failed', detail);
     }
-    setUser((prev) => ({
-      ...prev,
-      ...updatedPayload,
-    }));
-    setIsEditing(false);
-    showToast('Profile contact details saved');
   };
 
-  const syncSkillsToStore = async (nextSkills) => {
-    setSkillProficiencies(nextSkills);
-    await mockApi.updateStudentSkills(user?.id || 'student-rohit', nextSkills);
-    setUser((prev) => ({
-      ...prev,
-      skill_proficiencies: nextSkills,
-      skills: nextSkills.map((s) => s.name),
-    }));
+  // Sync skills to database
+  const syncSkillsToBackend = async (nextSkills) => {
+    const studentId = formData.student_id || user?.student_id;
+    if (!studentId) return;
+
+    try {
+      const payload = nextSkills.map((s) => ({
+        skill_id: s.skill_id,
+        proficiency_level: s.level,
+      }));
+
+      await studentsService.updateStudentSkills(studentId, payload);
+      setStudentSkills(nextSkills);
+      toast.success('Skills Updated', 'Your technical skill proficiency matrix is updated.');
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error('Skill Sync Failed', detail);
+    }
   };
 
   const handleAddSkill = async (e) => {
     e.preventDefault();
-    const trimmed = newSkillName.trim();
-    if (!trimmed) return;
-    const exists = skillProficiencies.some(
-      (s) => s.name.toLowerCase() === trimmed.toLowerCase()
-    );
+    if (!selectedSkillId) return;
+
+    const skillObj = availableSkills.find((s) => String(s.id) === String(selectedSkillId));
+    if (!skillObj) return;
+
+    const exists = studentSkills.some((s) => s.skill_id === skillObj.id);
     const nextSkills = exists
-      ? skillProficiencies.map((s) =>
-          s.name.toLowerCase() === trimmed.toLowerCase()
-            ? { ...s, level: newSkillLevel }
-            : s
+      ? studentSkills.map((s) =>
+          s.skill_id === skillObj.id ? { ...s, level: selectedSkillLevel } : s
         )
-      : [...skillProficiencies, { name: trimmed, level: newSkillLevel }];
+      : [
+          ...studentSkills,
+          {
+            skill_id: skillObj.id,
+            name: skillObj.name,
+            level: selectedSkillLevel,
+          },
+        ];
 
-    await syncSkillsToStore(nextSkills);
-    setNewSkillName('');
-    showToast(`Saved ${trimmed} (${newSkillLevel})`);
+    await syncSkillsToBackend(nextSkills);
   };
 
-  const handleChangeSkillLevel = async (skillName, level) => {
-    const nextSkills = skillProficiencies.map((s) =>
-      s.name === skillName ? { ...s, level } : s
+  const handleChangeSkillLevel = async (skillId, level) => {
+    const nextSkills = studentSkills.map((s) =>
+      s.skill_id === skillId ? { ...s, level } : s
     );
-    await syncSkillsToStore(nextSkills);
-    showToast(`Updated ${skillName} proficiency to ${level}`);
+    await syncSkillsToBackend(nextSkills);
   };
 
-  const handleRemoveSkill = async (skillToRemove) => {
-    const nextSkills = skillProficiencies.filter((s) => s.name !== skillToRemove);
-    await syncSkillsToStore(nextSkills);
-    showToast(`Removed ${skillToRemove}`);
+  const handleRemoveSkill = async (skillId) => {
+    const nextSkills = studentSkills.filter((s) => s.skill_id !== skillId);
+    await syncSkillsToBackend(nextSkills);
   };
 
   return (
@@ -262,11 +247,7 @@ export default function ProfilePage() {
               }
             }}
           >
-            {isEditing
-              ? 'Save Changes'
-              : isStaffOrAdmin
-              ? 'Edit Contact Details'
-              : 'Edit Contact & Resume'}
+            {isEditing ? 'Save Changes' : 'Edit Contact & Resume'}
           </Button>
         </div>
       </div>
@@ -371,7 +352,7 @@ export default function ProfilePage() {
 
         {/* RIGHT COLUMN */}
         <div className="lg:col-span-7 space-y-6">
-          {/* 1. Role-Specific Credentials + Editable Contact */}
+          {/* Academic & Contact Credentials */}
           <div className="bg-white/70 backdrop-blur-2xl rounded-3xl p-6 border border-white/60 shadow-sm space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-black/5">
               <div className="flex items-center gap-2.5">
@@ -380,14 +361,10 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                    {isStaffOrAdmin
-                      ? `${activeRole} Institutional Credentials`
-                      : 'Academic & Contact Credentials'}
+                    {isStaffOrAdmin ? 'Institutional Credentials' : 'Academic & Contact Credentials'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {isStaffOrAdmin
-                      ? 'Verified Campus Placement Cell staff identity and role permissions'
-                      : 'CGPA, department & backlogs are locked and verified by CDC'}
+                    CGPA, department & backlogs are locked and verified by CDC
                   </p>
                 </div>
               </div>
@@ -398,96 +375,55 @@ export default function ProfilePage() {
               </span>
             </div>
 
-            {isStaffOrAdmin ? (
-              /* ADMIN / STAFF INSTITUTIONAL BLOCK */
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
-                <div>
+            {/* Read-Only CDC Verified Block */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
+              <div>
+                <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Role Classification
+                    CGPA (Read-Only)
                   </span>
-                  <p className="text-base font-display font-black text-[#0B0B0F] mt-1">
-                    {permissions?.label || activeRole}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-700 mt-1">
-                    ID: {user?.id}
-                  </span>
+                  <Lock className="w-3 h-3 text-slate-400" />
                 </div>
-
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Designation
-                  </span>
-                  <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1">
-                    {formData.title}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                    {formData.department}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Employee Badge ID
-                  </span>
-                  <p className="text-base font-mono font-black text-emerald-600 mt-1">
-                    {formData.roll_number}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                    <ShieldCheck className="w-3 h-3" /> Active Clearance
-                  </span>
-                </div>
+                <p className="text-xl font-display font-black text-[#0B0B0F] mt-1">
+                  {formData.cgpa} / 10
+                </p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
+                </span>
               </div>
-            ) : (
-              /* STUDENT READ-ONLY CDC VERIFIED ACADEMIC BLOCK */
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      CGPA (Read-Only)
-                    </span>
-                    <Lock className="w-3 h-3 text-slate-400" />
-                  </div>
-                  <p className="text-xl font-display font-black text-[#0B0B0F] mt-1">
-                    {formData.cgpa} / 10
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
-                  </span>
-                </div>
 
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Department (Read-Only)
-                    </span>
-                    <Lock className="w-3 h-3 text-slate-400" />
-                  </div>
-                  <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5">
-                    {formData.department}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Department (Read-Only)
                   </span>
+                  <Lock className="w-3 h-3 text-slate-400" />
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Active Backlogs (Read-Only)
-                    </span>
-                    <Lock className="w-3 h-3 text-slate-400" />
-                  </div>
-                  <p className="text-xl font-display font-black text-emerald-600 mt-1">
-                    {formData.active_backlogs}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
-                  </span>
-                </div>
+                <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5">
+                  {formData.department}
+                </p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
+                </span>
               </div>
-            )}
 
-            {/* Editable Contact Phone & Resume Link */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Active Backlogs (Read-Only)
+                  </span>
+                  <Lock className="w-3 h-3 text-slate-400" />
+                </div>
+                <p className="text-xl font-display font-black text-emerald-600 mt-1">
+                  {formData.active_backlogs}
+                </p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
+                </span>
+              </div>
+            </div>
+
+            {/* Editable Contact Fields */}
             {isEditing ? (
               <form onSubmit={handleSaveProfile} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -500,13 +436,10 @@ export default function ProfilePage() {
                   />
                   {!isStaffOrAdmin && (
                     <Input
-                      label="Resume Link (URL)"
+                      label="Resume URL"
                       value={formData.resume_url}
-                      onChange={(e) =>
-                        setFormData({ ...formData, resume_url: e.target.value })
-                      }
-                      placeholder="https://drive.google.com/..."
-                      required
+                      onChange={(e) => setFormData({ ...formData, resume_url: e.target.value })}
+                      placeholder="https://..."
                     />
                   )}
                 </div>
@@ -528,39 +461,9 @@ export default function ProfilePage() {
                   </span>
                   <p className="text-sm font-bold text-slate-800 mt-1 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-violet-600" />
-                    {formData.phone}
+                    {formData.phone || 'Not provided'}
                   </p>
                 </div>
-
-                {!isStaffOrAdmin && (
-                  <div>
-                    <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
-                      Candidate Resume
-                    </span>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const res = downloadDemoResumePdf({
-                            ...user,
-                            ...formData,
-                            skill_proficiencies: skillProficiencies,
-                          });
-                          if (res.success) {
-                            showToast(`Downloaded Resume PDF (${res.filename})`);
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold text-xs border border-violet-200 transition-colors cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Download Resume PDF
-                      </button>
-                      <span className="text-[11px] text-slate-400 truncate max-w-[180px]">
-                        {formData.resume_url}
-                      </span>
-                    </div>
-                  </div>
-                )}
 
                 <div>
                   <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
@@ -574,48 +477,34 @@ export default function ProfilePage() {
 
                 <div>
                   <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
-                    {isStaffOrAdmin ? 'Staff Badge ID' : 'Roll Number'}
+                    Roll Number
                   </span>
                   <p className="text-sm font-mono font-bold text-slate-800 mt-1">
                     {formData.roll_number}
                   </p>
                 </div>
+
+                {!isStaffOrAdmin && formData.resume_url && (
+                  <div>
+                    <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
+                      Resume Link
+                    </span>
+                    <a
+                      href={formData.resume_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-bold text-violet-600 hover:underline mt-1 block truncate"
+                    >
+                      {formData.resume_url}
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* 2. For STUDENT: Editable Skills + Proficiency Matrix; For ADMIN/STAFF: Role Permissions Matrix */}
-          {isStaffOrAdmin ? (
-            <div className="bg-white/70 backdrop-blur-2xl rounded-3xl p-6 border border-white/60 shadow-sm space-y-4">
-              <div className="flex items-center gap-2.5 pb-3 border-b border-black/5">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                    Active Role Permissions ({activeRole})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Enforced by centralized frontend route guards and component capability checks
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {(user?.permissions || []).map((perm) => (
-                  <div
-                    key={perm}
-                    className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-white/90 border border-slate-200/80 text-xs font-bold text-[#0B0B0F]"
-                  >
-                    <span className="font-mono">{perm}</span>
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Granted
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
+          {/* Skills & Proficiency Matrix (STUDENT) */}
+          {activeRole === 'STUDENT' && (
             <div className="bg-white/70 backdrop-blur-2xl rounded-3xl p-6 border border-white/60 shadow-sm space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-black/5">
                 <div className="flex items-center gap-2.5">
@@ -624,20 +513,20 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                      Skills & Proficiency Matrix (Beginner to Expert)
+                      Skills & Proficiency Benchmarks
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Used directly by the Eligibility Engine to evaluate drive qualification & Match %
+                      Evaluated directly by fn_match_score against job recruitment criteria
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Editable Skills List with Level Selector */}
+              {/* Skills List */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                {skillProficiencies.map((item) => (
+                {studentSkills.map((item) => (
                   <div
-                    key={item.name}
+                    key={item.skill_id}
                     className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-white/90 border border-slate-200/80 shadow-2xs"
                   >
                     <span className="text-xs font-bold text-[#0B0B0F] truncate">
@@ -647,16 +536,8 @@ export default function ProfilePage() {
                     <div className="flex items-center gap-1.5">
                       <select
                         value={item.level}
-                        onChange={(e) => handleChangeSkillLevel(item.name, e.target.value)}
-                        className={`text-[11px] font-bold px-2.5 py-1 rounded-full border outline-none cursor-pointer ${
-                          item.level === 'Expert'
-                            ? 'bg-violet-100 text-violet-800 border-violet-200'
-                            : item.level === 'Advanced'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : item.level === 'Intermediate'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
+                        onChange={(e) => handleChangeSkillLevel(item.skill_id, e.target.value)}
+                        className="text-[11px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-[#0B0B0F] border border-black/5 outline-none"
                       >
                         {SKILL_LEVELS.map((lvl) => (
                           <option key={lvl} value={lvl}>
@@ -664,11 +545,10 @@ export default function ProfilePage() {
                           </option>
                         ))}
                       </select>
-
                       <button
                         type="button"
-                        onClick={() => handleRemoveSkill(item.name)}
-                        className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                        onClick={() => handleRemoveSkill(item.skill_id)}
+                        className="text-slate-400 hover:text-rose-600 p-1"
                         title="Remove skill"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -678,22 +558,24 @@ export default function ProfilePage() {
                 ))}
               </div>
 
-              {/* Add Skill + Proficiency Form */}
-              <form
-                onSubmit={handleAddSkill}
-                className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-3 border-t border-black/5"
-              >
-                <input
-                  type="text"
-                  placeholder="Skill name (e.g. Python, PyTorch, Rust)..."
-                  value={newSkillName}
-                  onChange={(e) => setNewSkillName(e.target.value)}
-                  className="flex-1 min-w-[180px] px-3.5 py-2 text-xs rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-violet-500"
-                />
+              {/* Add Skill Form */}
+              <form onSubmit={handleAddSkill} className="pt-3 border-t border-black/5 flex items-center gap-2">
                 <select
-                  value={newSkillLevel}
-                  onChange={(e) => setNewSkillLevel(e.target.value)}
-                  className="px-3 py-2 text-xs font-bold rounded-xl bg-white border border-slate-200 text-[#0B0B0F] outline-none"
+                  value={selectedSkillId}
+                  onChange={(e) => setSelectedSkillId(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold bg-white border border-black/10 outline-none"
+                >
+                  {availableSkills.map((sk) => (
+                    <option key={sk.id} value={sk.id}>
+                      {sk.name} ({sk.category})
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedSkillLevel}
+                  onChange={(e) => setSelectedSkillLevel(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold bg-white border border-black/10 outline-none"
                 >
                   {SKILL_LEVELS.map((lvl) => (
                     <option key={lvl} value={lvl}>
@@ -701,7 +583,8 @@ export default function ProfilePage() {
                     </option>
                   ))}
                 </select>
-                <Button size="sm" variant="primary" icon={Plus} type="submit">
+
+                <Button variant="secondary" size="sm" type="submit" icon={Plus}>
                   Add Skill
                 </Button>
               </form>

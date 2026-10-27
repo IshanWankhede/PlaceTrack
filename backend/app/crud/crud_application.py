@@ -167,11 +167,13 @@ def schedule_interview(
     panelists: Optional[str] = None,
     reporting_time: Optional[time] = None,
 ) -> Interview:
+    if scheduled_at and scheduled_at.tzinfo is not None:
+        scheduled_at = scheduled_at.replace(tzinfo=None)
     try:
         db.execute(
             text("""
                 CALL sp_schedule_interview(
-                    :application_id, :round_type, :scheduled_at,
+                    :application_id, :round_type, CAST(:scheduled_at AS TIMESTAMP),
                     :meeting_link, :venue, :panelists, :reporting_time
                 )
             """),

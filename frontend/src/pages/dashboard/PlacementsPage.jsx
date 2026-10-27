@@ -3,55 +3,48 @@ import DataTable from '../../components/ui/DataTable.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Input from '../../components/ui/Input.jsx';
-import StatusBadge from '../../components/ui/StatusBadge.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import placementsService from '../../services/placementsService.js';
+import offersService from '../../services/offersService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { Download, Plus, Edit3, FileText } from 'lucide-react';
-import { downloadDemoOfferPdf } from '../../utils/offerPdfGenerator.js';
-import { ContactActionButtons } from '../../components/ui/ContactActionButtons.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
+import { Download, Award, Edit3, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 
 export default function PlacementsPage() {
-  const { activeRole, user, showToast } = useAuth();
+  const { activeRole } = useAuth();
+  const toast = useToast();
+
+  const [activeTab, setActiveTab] = useState('placements'); // 'placements' | 'offers'
   const [placements, setPlacements] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [jobs, setJobs] = useState([]);
+  const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters
   const [deptFilter, setDeptFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+  const [companyFilter, setCompanyFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Process Fictional Offer form state
-  const [studentId, setStudentId] = useState('student-rohit');
-  const [jobId, setJobId] = useState('job-1');
-  const [baseLpa, setBaseLpa] = useState('14.0');
-  const [bonusLpa, setBonusLpa] = useState('2.5');
-  const [esopValue, setEsopValue] = useState('2.0');
-  const [joiningDate, setJoiningDate] = useState('July 15, 2027');
-
-  // Edit Existing Offer Record modal state
+  // Edit Offer Breakdown modal
   const [editOfferModal, setEditOfferModal] = useState({
     isOpen: false,
     offer: null,
     base_lpa: '',
     bonus_lpa: '',
-    esop_value: '',
-    joining_date: '',
-    offer_status: 'PENDING',
-    explanation: '',
+    esop_lpa: '',
   });
+  const [savingBreakdown, setSavingBreakdown] = useState(false);
 
   const loadData = async () => {
+    setLoading(true);
     try {
-      const [placementsData, studentsData, jobsData] = await Promise.all([
-        mockApi.getPlacements(),
-        mockApi.getStudents(),
-        mockApi.getJobs(),
+      const [placementsData, offersData] = await Promise.all([
+        placementsService.getPlacements(),
+        offersService.getOffers(),
       ]);
-      setPlacements(placementsData);
-      setStudents(studentsData);
-      setJobs(jobsData);
+      setPlacements(Array.isArray(placementsData) ? placementsData : []);
+      setOffers(Array.isArray(offersData) ? offersData : []);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load placement records:', err);
+      toast.error('Failed to load data', err.response?.data?.detail || err.message);
     } finally {
       setLoading(false);
     }
@@ -62,131 +55,83 @@ export default function PlacementsPage() {
   }, []);
 
   const handleExportCSV = () => {
-    const headers = [
-      'Student,Roll Number,Department,Company,Role,Tier,Base (LPA),Bonus (LPA),ESOP (LPA),Total CTC (LPA),Offer Status,Joining Date,Date',
-    ];
-    const rows = placements.map(
-      (p) =>
-        `"${p.student}","${p.roll_number}","${p.department}","${p.company}","${p.job_role}","${
-          p.tier || 'Dream'
-        }",${p.base_lpa || p.package_lpa},${p.bonus_lpa || 0},${p.esop_value || 0},${
-          p.package_lpa
-        },"${p.offer_status || 'PENDING'}","${p.joining_date || 'July 15, 2027'}","${p.date}"`
-    );
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'PlaceTrack_Placements_Offers_2026.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Exported verified placement & offer records to CSV');
+    const exportUrl = placementsService.getExportUrl();
+    window.open(exportUrl, '_blank');
+    toast.success('Export Started', 'Downloading verified placement records CSV');
   };
 
-  const handleCreateOffer = async (e) => {
-    e.preventDefault();
-    const std = students.find((s) => s.id === studentId) || students[0];
-    const jb = jobs.find((j) => j.id === jobId) || jobs[0];
-    if (!std || !jb) return;
-
-    const total =
-      (parseFloat(baseLpa) || 0) + (parseFloat(bonusLpa) || 0) + (parseFloat(esopValue) || 0);
-
-    await mockApi.createOffer({
-      student_id: std.id,
-      student: std.name,
-      roll_number: std.roll_number,
-      department: std.department,
-      job_id: jb.id,
-      company: jb.company,
-      job_role: jb.title,
-      tier: jb.tier || 'Dream',
-      package_lpa: Number(total.toFixed(1)),
-      base_lpa: parseFloat(baseLpa) || 12,
-      bonus_lpa: parseFloat(bonusLpa) || 2,
-      esop_value: parseFloat(esopValue) || 1.5,
-      joining_date: joiningDate,
-      actor: `${user?.name || 'Raghav Menon'} (${activeRole})`,
-    });
-    setIsOfferModalOpen(false);
-    showToast(`Issued offer for ${std.name} at ${jb.company}`);
-    await loadData();
-  };
-
-  const openEditOfferModal = (offer) => {
+  const openBreakdownModal = (offer) => {
     setEditOfferModal({
       isOpen: true,
       offer,
-      base_lpa: String(offer.base_lpa ?? offer.package_lpa ?? 12),
-      bonus_lpa: String(offer.bonus_lpa ?? 0),
-      esop_value: String(offer.esop_value ?? 0),
-      joining_date: offer.joining_date || 'July 15, 2027',
-      offer_status: offer.offer_status || 'PENDING',
-      explanation: '',
+      base_lpa: String(offer.base_lpa || offer.package || '0.00'),
+      bonus_lpa: String(offer.bonus_lpa || '0.00'),
+      esop_lpa: String(offer.esop_lpa || '0.00'),
     });
   };
 
-  const handleSaveOfferRecord = async (e) => {
+  const handleSaveBreakdown = async (e) => {
     e.preventDefault();
-    const { offer, base_lpa, bonus_lpa, esop_value, joining_date, offer_status, explanation } =
-      editOfferModal;
+    const { offer, base_lpa, bonus_lpa, esop_lpa } = editOfferModal;
     if (!offer) return;
-
-    await mockApi.updateOfferRecord(offer.id, {
-      base_lpa: parseFloat(base_lpa) || 0,
-      bonus_lpa: parseFloat(bonus_lpa) || 0,
-      esop_value: parseFloat(esop_value) || 0,
-      joining_date,
-    });
-
-    if (offer_status !== offer.offer_status) {
-      await mockApi.updateOfferStatus(offer.id, offer_status, {
-        isStudentDecision: false,
-        actor: `${user?.name || 'Raghav Menon'} (${activeRole})`,
-        explanation:
-          explanation.trim() ||
-          `Offer status updated to ${offer_status} by ${user?.name || activeRole}.`,
+    setSavingBreakdown(true);
+    try {
+      await offersService.updateBreakdown(offer.offer_id, {
+        base_lpa: parseFloat(base_lpa) || 0,
+        bonus_lpa: parseFloat(bonus_lpa) || 0,
+        esop_lpa: parseFloat(esop_lpa) || 0,
       });
+      toast.success('CTC Breakdown Updated', `Offer ${offer.offer_id} for ${offer.student_name}`);
+      setEditOfferModal({ isOpen: false, offer: null, base_lpa: '', bonus_lpa: '', esop_lpa: '' });
+      loadData();
+    } catch (err) {
+      toast.error('Update Failed', err.response?.data?.detail || err.message);
+    } finally {
+      setSavingBreakdown(false);
     }
-
-    setEditOfferModal({
-      isOpen: false,
-      offer: null,
-      base_lpa: '',
-      bonus_lpa: '',
-      esop_value: '',
-      joining_date: '',
-      offer_status: 'PENDING',
-      explanation: '',
-    });
-    showToast(`Updated offer record for ${offer.student} (${offer.company})`);
-    await loadData();
   };
 
-  const handleStatusChange = async (offerId, nextStatus) => {
-    await mockApi.updateOfferStatus(offerId, nextStatus, {
-      isStudentDecision: false,
-      actor: `${user?.name || 'Raghav Menon'} (${activeRole})`,
-    });
-    showToast(`Updated offer status to ${nextStatus} and synced application timeline`);
-    await loadData();
-  };
-
+  // Filtered placements
   const filteredPlacements = placements.filter((p) => {
     if (deptFilter !== 'ALL' && p.department !== deptFilter) return false;
-    if (statusFilter !== 'ALL' && (p.offer_status || 'PENDING') !== statusFilter) return false;
+    if (companyFilter !== 'ALL' && p.company !== companyFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = (p.student_name || '').toLowerCase().includes(q);
+      const matchRoll = (p.roll_number || '').toLowerCase().includes(q);
+      const matchComp = (p.company || '').toLowerCase().includes(q);
+      const matchRole = (p.job_role || '').toLowerCase().includes(q);
+      if (!matchName && !matchRoll && !matchComp && !matchRole) return false;
+    }
     return true;
   });
 
-  const columns = [
+  // Filtered offers
+  const filteredOffers = offers.filter((o) => {
+    if (companyFilter !== 'ALL' && o.company !== companyFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = (o.student_name || '').toLowerCase().includes(q);
+      const matchComp = (o.company || '').toLowerCase().includes(q);
+      const matchTitle = (o.job_title || '').toLowerCase().includes(q);
+      if (!matchName && !matchComp && !matchTitle) return false;
+    }
+    return true;
+  });
+
+  // Unique companies for filter
+  const companyOptions = Array.from(
+    new Set([...placements.map((p) => p.company), ...offers.map((o) => o.company)].filter(Boolean))
+  );
+
+  const placementColumns = [
     {
-      header: 'Student Name',
-      accessor: 'student',
+      header: 'Student',
+      accessor: 'student_name',
       render: (row) => (
         <div>
-          <p className="font-bold text-xs text-[#0B0B0F]">{row.student}</p>
-          <p className="text-[11px] text-[#64748B] font-mono">{row.roll_number}</p>
+          <p className="font-bold text-xs text-[#0B0B0F]">{row.student_name}</p>
+          <p className="text-[11px] text-[#64748B]">{row.roll_number}</p>
         </div>
       ),
     },
@@ -198,423 +143,278 @@ export default function PlacementsPage() {
       ),
     },
     {
-      header: 'Company & Tier',
+      header: 'Company & Role',
       accessor: 'company',
       render: (row) => (
-        <div className="flex items-center gap-1.5">
-          <span className="font-bold text-xs text-violet-700 bg-violet-50 px-2.5 py-1 rounded-full border border-violet-100">
-            {row.company}
-          </span>
+        <div>
+          <p className="font-bold text-xs text-[#0B0B0F]">{row.company}</p>
+          <p className="text-[11px] text-violet-600 font-semibold">{row.job_role}</p>
+        </div>
+      ),
+    },
+    {
+      header: 'Verified Package',
+      accessor: 'package',
+      render: (row) => (
+        <span className="font-display font-extrabold text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+          {Number(row.package).toFixed(2)} LPA
+        </span>
+      ),
+    },
+    {
+      header: 'Placement Date',
+      accessor: 'placement_date',
+      render: (row) => (
+        <span className="text-xs text-[#64748B] font-medium">{row.placement_date}</span>
+      ),
+    },
+  ];
+
+  const offerColumns = [
+    {
+      header: 'Student',
+      accessor: 'student_name',
+      render: (row) => (
+        <p className="font-bold text-xs text-[#0B0B0F]">{row.student_name}</p>
+      ),
+    },
+    {
+      header: 'Company',
+      accessor: 'company',
+      render: (row) => (
+        <div>
+          <p className="font-bold text-xs text-[#0B0B0F]">{row.company}</p>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-            {row.tier || 'Dream'}
+            {row.tier} Tier
           </span>
         </div>
       ),
     },
     {
-      header: 'Designation / Joining',
-      accessor: 'job_role',
+      header: 'Role',
+      accessor: 'job_title',
+      render: (row) => <span className="text-xs font-semibold text-[#475569]">{row.job_title}</span>,
+    },
+    {
+      header: 'CTC Breakdown (LPA)',
+      accessor: 'package',
       render: (row) => (
-        <div>
-          <span className="text-xs font-bold text-[#0B0B0F] block">{row.job_role}</span>
-          <span className="text-[10px] text-[#64748B]">
-            Joining: {row.joining_date || 'July 15, 2027'}
-          </span>
+        <div className="text-xs">
+          <p className="font-bold text-emerald-600">{Number(row.package).toFixed(2)} LPA Total</p>
+          <p className="text-[10px] text-slate-400">
+            Base: {Number(row.base_lpa).toFixed(2)} · Bonus: {Number(row.bonus_lpa).toFixed(2)} · ESOP: {Number(row.esop_lpa).toFixed(2)}
+          </p>
         </div>
       ),
     },
     {
-      header: 'CTC Breakdown',
-      accessor: 'package_lpa',
-      render: (row) => (
-        <div>
-          <span className="font-display font-black text-sm text-emerald-700 tabular-nums block">
-            {row.package_lpa} LPA
-          </span>
-          <span className="text-[10px] text-[#64748B]">
-            Base {row.base_lpa || row.package_lpa} · Bonus {row.bonus_lpa || 0} · ESOP{' '}
-            {row.esop_value || 0}
-          </span>
-        </div>
-      ),
-    },
-    {
-      header: 'Offer Status & Actions',
-      accessor: 'offer_status',
+      header: 'Offer Status',
+      accessor: 'status',
       render: (row) => {
-        const st = row.offer_status || 'PENDING';
-        const matchedStd = students.find((s) => s.id === row.student_id);
+        const s = row.status;
+        const cls =
+          s === 'ACCEPTED'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : s === 'PENDING'
+            ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : s === 'SUPERSEDED'
+            ? 'bg-purple-50 text-purple-700 border-purple-200'
+            : 'bg-slate-100 text-slate-600 border-slate-200';
         return (
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={st}
-              onChange={(e) => handleStatusChange(row.id, e.target.value)}
-              className={`text-[11px] font-bold px-2.5 py-1 rounded-full border outline-none cursor-pointer ${
-                st === 'ACCEPTED'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : st === 'DECLINED' || st === 'EXPIRED'
-                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                  : 'bg-amber-50 text-amber-800 border-amber-200'
-              }`}
-            >
-              <option value="PENDING">Pending Decision</option>
-              <option value="ACCEPTED">Accepted & Verified</option>
-              <option value="DECLINED">Declined</option>
-              <option value="EXPIRED">Expired</option>
-            </select>
-
-            <button
-              type="button"
-              onClick={() => {
-                const res = downloadDemoOfferPdf(row, matchedStd);
-                if (res.success) {
-                  showToast(`Downloaded Offer PDF (${res.filename})`);
-                } else {
-                  showToast(res.error || 'Could not generate Offer PDF');
-                }
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 transition-colors cursor-pointer"
-              title="Download Offer PDF"
-            >
-              <FileText className="w-3 h-3" />
-              Offer PDF
-            </button>
-
-            <button
-              type="button"
-              onClick={() => openEditOfferModal(row)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#0B0B0F] transition-colors cursor-pointer"
-              title="Edit offer record"
-            >
-              <Edit3 className="w-3 h-3" />
-              Edit
-            </button>
-
-            <ContactActionButtons
-              compact
-              target={{
-                id: row.student_id || matchedStd?.id || 'student-rohit',
-                name: row.student,
-                role: 'STUDENT',
-                phone: matchedStd?.phone || '+91 98202 33445',
-                email: matchedStd?.email || '',
-                subtitle: `${row.roll_number} · ${row.department}`,
-              }}
-              subject={`Offer Follow-up: ${row.company} (${row.package_lpa} LPA)`}
-            />
-          </div>
+          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${cls}`}>
+            {s}
+          </span>
         );
       },
+    },
+    {
+      header: 'Action',
+      sortable: false,
+      render: (row) => (
+        (activeRole === 'ADMIN' || activeRole === 'STAFF') && (
+          <button
+            type="button"
+            onClick={() => openBreakdownModal(row)}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+            title="Edit CTC breakdown"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+        )
+      ),
     },
   ];
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-800">
-              {activeRole === 'STAFF' ? 'TPO Offer Desk' : 'Executive Offer Oversight'}
-            </span>
-          </div>
-          <h2 className="font-display font-bold text-2xl text-[#0B0B0F] mt-1">
-            {activeRole === 'STAFF'
-              ? 'Offers and Placements Management'
-              : 'Institution Placements & Offers Ledger'}
+          <h2 className="font-display font-extrabold text-2xl text-[#0B0B0F] tracking-tight">
+            Offers & Placement Outcomes
           </h2>
-          <p className="text-xs text-[#64748B]">
-            Process fictional candidate offer records, update CTC breakdowns, and oversee student offer decisions across all departments
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Verified campus placements, single/dream-offer policy compliance, and released offer letters.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Download}
-            onClick={handleExportCSV}
-          >
-            Export CSV
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Plus}
-            onClick={() => setIsOfferModalOpen(true)}
-            className="shadow-md"
-          >
-            Process Fictional Offer
+        <div className="flex items-center gap-2.5">
+          <Button variant="secondary" size="sm" onClick={handleExportCSV} icon={Download}>
+            Export Placements CSV
           </Button>
         </div>
       </div>
 
-      {/* Filter Chips */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-[#64748B]">Department:</span>
-          {[
-            'ALL',
-            'Computer Science',
-            'Information Tech.',
-            'Electronics & Comm.',
-            'Mechanical Eng.',
-          ].map((dept) => (
-            <button
-              key={dept}
-              type="button"
-              onClick={() => setDeptFilter(dept)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                deptFilter === dept
-                  ? 'bg-[#0B0B0F] text-white shadow-xs'
-                  : 'bg-white text-[#64748B] border border-black/5 hover:border-black/20'
-              }`}
-            >
-              {dept === 'ALL' ? 'All Departments' : dept.split(' ')[0]}
-            </button>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex items-center gap-2 border-b border-black/5 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('placements')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === 'placements'
+              ? 'bg-[#0B0B0F] text-white shadow-xs'
+              : 'text-[#64748B] hover:text-[#0B0B0F] hover:bg-black/5'
+          }`}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Verified Placements ({filteredPlacements.length})
+        </button>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[#64748B]">Decision Status:</span>
-          {['ALL', 'PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED'].map((st) => (
-            <button
-              key={st}
-              type="button"
-              onClick={() => setStatusFilter(st)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${
-                statusFilter === st
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-white text-[#64748B] border border-black/5 hover:border-black/20'
-              }`}
-            >
-              {st === 'ALL' ? 'All' : st}
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('offers')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === 'offers'
+              ? 'bg-[#0B0B0F] text-white shadow-xs'
+              : 'text-[#64748B] hover:text-[#0B0B0F] hover:bg-black/5'
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          Offer Letters & CTC Breakdown ({filteredOffers.length})
+        </button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={filteredPlacements}
-        searchPlaceholder="Search offers by student, roll number, company, or package..."
-      />
-
-      {/* Process Fictional Offer Modal */}
-      <Modal
-        isOpen={isOfferModalOpen}
-        onClose={() => setIsOfferModalOpen(false)}
-        title="Process Offer Record"
-        subtitle="Issue a placement offer that immediately syncs with the student's My Offers portal and Application Timeline"
-      >
-        <form onSubmit={handleCreateOffer} className="space-y-4 pt-2">
-          <div>
-            <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-              Select Student Candidate
-            </label>
+      {/* Filters Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-black/5 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'placements' && (
             <select
-              value={studentId}
-              onChange={(e) => setStudentId(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="text-xs font-semibold bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] focus:outline-none"
             >
-              {students.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.roll_number} · {s.department})
-                </option>
-              ))}
+              <option value="ALL">All Departments</option>
+              <option value="Computer Engineering">Computer Engineering</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Electronics & Telecommunication">ENTC</option>
+              <option value="Mechanical Engineering">Mechanical</option>
             </select>
-          </div>
+          )}
 
-          <div>
-            <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-              Select Recruitment Drive
-            </label>
-            <select
-              value={jobId}
-              onChange={(e) => setJobId(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
-            >
-              {jobs.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {j.company} — {j.title} ({j.tier} Tier)
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
+            className="text-xs font-semibold bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] focus:outline-none"
+          >
+            <option value="ALL">All Companies</option>
+            {companyOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <Input
-              variant="pill"
-              label="Base Salary (LPA)"
-              type="number"
-              step="0.5"
-              value={baseLpa}
-              onChange={(e) => setBaseLpa(e.target.value)}
-              required
-            />
-            <Input
-              variant="pill"
-              label="Bonus (LPA)"
-              type="number"
-              step="0.5"
-              value={bonusLpa}
-              onChange={(e) => setBonusLpa(e.target.value)}
-              required
-            />
-            <Input
-              variant="pill"
-              label="ESOP (LPA)"
-              type="number"
-              step="0.5"
-              value={esopValue}
-              onChange={(e) => setEsopValue(e.target.value)}
-              required
-            />
-          </div>
+        <input
+          type="text"
+          placeholder="Search student, roll number, company..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="text-xs bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] w-48 sm:w-64 focus:outline-none focus:border-[#0B0B0F]"
+        />
+      </div>
 
-          <Input
-            variant="pill"
-            label="Proposed Joining Date"
-            value={joiningDate}
-            onChange={(e) => setJoiningDate(e.target.value)}
-            required
-          />
+      {/* Table Data */}
+      {activeTab === 'placements' ? (
+        <DataTable
+          columns={placementColumns}
+          data={filteredPlacements}
+          loading={loading}
+          emptyMessage="No verified placements match the active filters."
+        />
+      ) : (
+        <DataTable
+          columns={offerColumns}
+          data={filteredOffers}
+          loading={loading}
+          emptyMessage="No offers found matching the active filters."
+        />
+      )}
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-black/5">
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => setIsOfferModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button variant="primary" size="sm" type="submit">
-              Issue Fictional Offer
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Edit Existing Offer Record Modal */}
+      {/* EDIT OFFER BREAKDOWN MODAL */}
       <Modal
         isOpen={editOfferModal.isOpen}
-        onClose={() =>
-          setEditOfferModal({
-            isOpen: false,
-            offer: null,
-            base_lpa: '',
-            bonus_lpa: '',
-            esop_value: '',
-            joining_date: '',
-            offer_status: 'PENDING',
-            explanation: '',
-          })
-        }
-        title={`Update Offer Record — ${editOfferModal.offer?.student}`}
-        subtitle={`${editOfferModal.offer?.company} · ${editOfferModal.offer?.job_role} (${editOfferModal.offer?.tier} Tier)`}
+        onClose={() => setEditOfferModal({ isOpen: false, offer: null, base_lpa: '', bonus_lpa: '', esop_lpa: '' })}
+        title="Edit CTC Breakdown"
+        maxWidth="max-w-sm"
       >
-        <form onSubmit={handleSaveOfferRecord} className="space-y-4 pt-2">
-          <div className="grid grid-cols-3 gap-3">
+        {editOfferModal.offer && (
+          <form onSubmit={handleSaveBreakdown} className="space-y-4 pt-2">
+            <p className="text-xs text-slate-500">
+              Set verified compensation components for{' '}
+              <strong className="text-[#0B0B0F]">{editOfferModal.offer.student_name}</strong> at{' '}
+              <strong className="text-[#0B0B0F]">{editOfferModal.offer.company}</strong>.
+            </p>
+
             <Input
-              variant="pill"
               label="Base Salary (LPA)"
               type="number"
-              step="0.5"
+              step="0.01"
               value={editOfferModal.base_lpa}
-              onChange={(e) =>
-                setEditOfferModal((prev) => ({ ...prev, base_lpa: e.target.value }))
-              }
+              onChange={(e) => setEditOfferModal({ ...editOfferModal, base_lpa: e.target.value })}
               required
             />
             <Input
-              variant="pill"
-              label="Bonus (LPA)"
+              label="Annual Bonus (LPA)"
               type="number"
-              step="0.5"
+              step="0.01"
               value={editOfferModal.bonus_lpa}
-              onChange={(e) =>
-                setEditOfferModal((prev) => ({ ...prev, bonus_lpa: e.target.value }))
-              }
-              required
+              onChange={(e) => setEditOfferModal({ ...editOfferModal, bonus_lpa: e.target.value })}
             />
             <Input
-              variant="pill"
-              label="ESOP (LPA)"
+              label="ESOP Value (LPA)"
               type="number"
-              step="0.5"
-              value={editOfferModal.esop_value}
-              onChange={(e) =>
-                setEditOfferModal((prev) => ({ ...prev, esop_value: e.target.value }))
-              }
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              variant="pill"
-              label="Proposed Joining Date"
-              value={editOfferModal.joining_date}
-              onChange={(e) =>
-                setEditOfferModal((prev) => ({ ...prev, joining_date: e.target.value }))
-              }
-              required
+              step="0.01"
+              value={editOfferModal.esop_lpa}
+              onChange={(e) => setEditOfferModal({ ...editOfferModal, esop_lpa: e.target.value })}
             />
 
-            <div>
-              <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-                Offer Decision Status
-              </label>
-              <select
-                value={editOfferModal.offer_status}
-                onChange={(e) =>
-                  setEditOfferModal((prev) => ({ ...prev, offer_status: e.target.value }))
-                }
-                className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
-              >
-                <option value="PENDING">PENDING (Awaiting Student Decision)</option>
-                <option value="ACCEPTED">ACCEPTED (Verified)</option>
-                <option value="DECLINED">DECLINED</option>
-                <option value="EXPIRED">EXPIRED (Deadline Lapsed)</option>
-              </select>
+            <div className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-black/5 text-xs font-bold text-[#0B0B0F]">
+              <span>Total CTC:</span>
+              <span className="text-emerald-600 font-display text-sm">
+                {(
+                  (parseFloat(editOfferModal.base_lpa) || 0) +
+                  (parseFloat(editOfferModal.bonus_lpa) || 0) +
+                  (parseFloat(editOfferModal.esop_lpa) || 0)
+                ).toFixed(2)}{' '}
+                LPA
+              </span>
             </div>
-          </div>
 
-          <Input
-            variant="pill"
-            label="Audit Note / Status Explanation"
-            value={editOfferModal.explanation}
-            onChange={(e) =>
-              setEditOfferModal((prev) => ({ ...prev, explanation: e.target.value }))
-            }
-            placeholder="Reason for updating compensation or offer status..."
-          />
-
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-black/5">
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() =>
-                setEditOfferModal({
-                  isOpen: false,
-                  offer: null,
-                  base_lpa: '',
-                  bonus_lpa: '',
-                  esop_value: '',
-                  joining_date: '',
-                  offer_status: 'PENDING',
-                  explanation: '',
-                })
-              }
-            >
-              Cancel
-            </Button>
-            <Button variant="primary" size="sm" type="submit">
-              Save Offer Changes
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setEditOfferModal({ isOpen: false, offer: null, base_lpa: '', bonus_lpa: '', esop_lpa: '' })}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" size="md" type="submit" loading={savingBreakdown}>
+                Save Breakdown
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

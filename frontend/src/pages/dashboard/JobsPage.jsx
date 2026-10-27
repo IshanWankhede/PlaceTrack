@@ -5,8 +5,10 @@ import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Input from '../../components/ui/Input.jsx';
 import Avatar from '../../components/ui/Avatar.jsx';
-import { mockApi } from '../../services/mockApi.js';
-import { checkEligibility, SKILL_LEVELS } from '../../services/eligibility.js';
+import jobsService from '../../services/jobsService.js';
+import studentsService from '../../services/studentsService.js';
+import companiesService from '../../services/companiesService.js';
+import applicationsService from '../../services/applicationsService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import {
@@ -15,41 +17,23 @@ import {
   Plus,
   CheckCircle2,
   XCircle,
-  ArrowRight,
-  Lock,
-  Filter,
-  ArrowUpDown,
-  Calendar,
-  X,
   Briefcase,
   Building2,
-  Users,
   Award,
-  Clock,
   Sparkles,
   ExternalLink,
-  ShieldCheck,
-  Eye,
-  Settings2,
-  FileText,
-  ChevronRight,
-  AlertCircle,
-  ToggleLeft,
-  ToggleRight,
-  Sliders,
-  BarChart3,
   Search,
   Check,
-  CheckSquare,
-  Info,
+  X,
+  FileText,
+  Archive,
+  Clock,
+  ArrowUpDown,
+  Lock,
+  AlertCircle,
 } from 'lucide-react';
 
-const ALL_BRANCHES = [
-  'Computer Science',
-  'Information Tech.',
-  'Electronics & Comm.',
-  'Mechanical Eng.',
-];
+const SKILL_LEVELS = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT'];
 
 export default function JobsPage() {
   const { user, activeRole } = useAuth();
@@ -57,9 +41,12 @@ export default function JobsPage() {
   const toast = useToast();
 
   const [jobs, setJobs] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [availableSkills, setAvailableSkills] = useState([]);
   const [students, setStudents] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [interviews, setInterviews] = useState([]);
+  const [studentEligibleJobs, setStudentEligibleJobs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [viewMode, setViewMode] = useState('grid');
@@ -68,7 +55,10 @@ export default function JobsPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerActiveTab, setDrawerActiveTab] = useState('details'); // 'details' | 'eligible' | 'applications'
   const [drawerCohortFilter, setDrawerCohortFilter] = useState('ALL'); // 'ALL' | 'ELIGIBLE' | 'INELIGIBLE'
-  const [drawerAppFilter, setDrawerAppFilter] = useState('ALL');
+  const [jobEligibilityCriteria, setJobEligibilityCriteria] = useState(null);
+  const [loadingEligibility, setLoadingEligibility] = useState(false);
+  const [eligibleStudentsList, setEligibleStudentsList] = useState([]);
+  const [loadingEligibleStudents, setLoadingEligibleStudents] = useState(false);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
@@ -77,7 +67,7 @@ export default function JobsPage() {
   const [eligibleOnly, setEligibleOnly] = useState(false);
 
   // Staff / Admin specific filters
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'CLOSED'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'CLOSED' | 'ARCHIVED'
   const [branchFilter, setBranchFilter] = useState('ALL');
 
   // Common filters & sorting
@@ -86,30 +76,23 @@ export default function JobsPage() {
   const [sortBy, setSortBy] = useState(activeRole === 'STUDENT' ? 'best_match' : 'closing_soon');
 
   // Job Form State
-  const [newTitle, setNewTitle] = useState('');
-  const [newCompany, setNewCompany] = useState('');
-  const [newPackageMin, setNewPackageMin] = useState('14.0');
-  const [newPackageMax, setNewPackageMax] = useState('18.0');
-  const [newDriveDate, setNewDriveDate] = useState('2026-11-22');
-  const [newDeadline, setNewDeadline] = useState('2026-11-18');
-  const [newLocation, setNewLocation] = useState('Bangalore, India (Hybrid)');
-  const [newMinCgpa, setNewMinCgpa] = useState('8.0');
-  const [newMaxBacklogs, setNewMaxBacklogs] = useState('0');
-  const [newAllowedBranches, setNewAllowedBranches] = useState([
-    'Computer Science',
-    'Information Tech.',
-  ]);
-  const [newRequiredSkills, setNewRequiredSkills] = useState([
-    { name: 'React', level: 'Advanced' },
-    { name: 'TypeScript', level: 'Intermediate' },
-  ]);
-  const [skillInputName, setSkillInputName] = useState('');
-  const [skillInputLevel, setSkillInputLevel] = useState('Intermediate');
-  const [newTier, setNewTier] = useState('Dream');
-  const [newStatus, setNewStatus] = useState('OPEN');
-  const [newDescription, setNewDescription] = useState('');
+  const [formCompanyId, setFormCompanyId] = useState('');
+  const [formTitle, setFormTitle] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formPackage, setFormPackage] = useState('14.0');
+  const [formPackageMax, setFormPackageMax] = useState('18.0');
+  const [formDriveDate, setFormDriveDate] = useState('');
+  const [formDeadline, setFormDeadline] = useState('');
+  const [formLocation, setFormLocation] = useState('Bangalore, India');
+  const [formMinCgpa, setFormMinCgpa] = useState('7.5');
+  const [formMaxBacklogs, setFormMaxBacklogs] = useState('0');
+  const [formJobType, setFormJobType] = useState('FULL_TIME');
+  const [formStatus, setFormStatus] = useState('OPEN');
+  const [formDepartmentIds, setFormDepartmentIds] = useState([]);
+  const [formSkills, setFormSkills] = useState([]);
+  const [selectedSkillId, setSelectedSkillId] = useState('');
+  const [selectedSkillLevel, setSelectedSkillLevel] = useState('INTERMEDIATE');
 
-  // Synchronously adjust default sorting if role changes
   useEffect(() => {
     if (activeRole === 'STUDENT') {
       setSortBy('best_match');
@@ -118,21 +101,40 @@ export default function JobsPage() {
     }
   }, [activeRole]);
 
-  // Load all jobs, students, applications, and interviews
   const loadData = async () => {
     try {
-      const [jobsData, studentsData, appsData, interviewsData] = await Promise.all([
-        mockApi.getJobs(),
-        mockApi.getStudents(),
-        mockApi.getApplications(),
-        mockApi.getInterviews(),
+      setLoading(true);
+      const [jobsData, compsData, deptsData, skillsData] = await Promise.all([
+        jobsService.getJobs(),
+        companiesService.getCompanies(),
+        studentsService.getDepartments(),
+        studentsService.getSkills(),
       ]);
-      setJobs(jobsData || []);
-      setStudents(studentsData || []);
-      setApplications(appsData || []);
-      setInterviews(interviewsData || []);
+
+      const jobsList = Array.isArray(jobsData) ? jobsData : jobsData?.items || [];
+      setJobs(jobsList);
+      setCompanies(Array.isArray(compsData) ? compsData : compsData?.items || []);
+      setDepartments(Array.isArray(deptsData) ? deptsData : []);
+      setAvailableSkills(Array.isArray(skillsData) ? skillsData : []);
+
+      if (activeRole === 'STUDENT' && user?.student_id) {
+        const [eligJobs, myApps] = await Promise.all([
+          studentsService.getStudentEligibleJobs(user.student_id).catch(() => []),
+          applicationsService.getMyApplications().catch(() => []),
+        ]);
+        setStudentEligibleJobs(eligJobs || []);
+        setApplications(myApps || []);
+      } else {
+        const [appsData, stdsData] = await Promise.all([
+          applicationsService.getApplications().catch(() => []),
+          studentsService.getStudents({ page_size: 100 }).catch(() => ({ items: [] })),
+        ]);
+        setApplications(Array.isArray(appsData) ? appsData : appsData?.items || []);
+        setStudents(stdsData?.items || []);
+      }
     } catch (err) {
       console.error('Failed to load jobs data:', err);
+      toast.error('Data Load Error', err.response?.data?.detail || err.message);
     } finally {
       setLoading(false);
     }
@@ -140,408 +142,341 @@ export default function JobsPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeRole, user?.student_id]);
 
-  // ONLY for STUDENT role: resolve active student profile
-  // For STAFF and ADMIN: this remains strictly null so their accounts are NEVER conflated with students!
-  const currentStudent = useMemo(() => {
-    if (activeRole !== 'STUDENT') return null;
-    const targetId = user?.id || 'student-rohit';
-    const found = students.find((s) => s.id === targetId) || students[0];
-    if (!found) return user;
-    return {
-      ...found,
-      ...user,
-      skill_proficiencies: user?.skill_proficiencies || found?.skill_proficiencies || [],
-    };
-  }, [students, user, activeRole]);
+  // Load student-specific criteria checklist when drawer opens or changes
+  useEffect(() => {
+    if (!selectedJob || !isDrawerOpen) {
+      setJobEligibilityCriteria(null);
+      return;
+    }
 
-  // Helper to determine if a deadline has expired (comparing with today's date)
+    if (activeRole === 'STUDENT' && user?.student_id) {
+      setLoadingEligibility(true);
+      jobsService
+        .getJobEligibility(selectedJob.id, user.student_id)
+        .then((res) => {
+          setJobEligibilityCriteria(res);
+        })
+        .catch((err) => {
+          console.error('Failed to check eligibility:', err);
+          setJobEligibilityCriteria(null);
+        })
+        .finally(() => setLoadingEligibility(false));
+    } else if (activeRole !== 'STUDENT') {
+      // Staff view: load eligible students
+      setLoadingEligibleStudents(true);
+      jobsService
+        .getEligibleStudents(selectedJob.id)
+        .then((res) => {
+          setEligibleStudentsList(Array.isArray(res) ? res : []);
+        })
+        .catch((err) => {
+          console.error('Failed to load eligible students:', err);
+          setEligibleStudentsList([]);
+        })
+        .finally(() => setLoadingEligibleStudents(false));
+    }
+  }, [selectedJob?.id, isDrawerOpen, activeRole, user?.student_id]);
+
+  // Map of student's applications
+  const studentApplicationsMap = useMemo(() => {
+    const map = {};
+    applications.forEach((a) => {
+      const jid = a.job_id || a.jobId;
+      map[jid] = a;
+    });
+    return map;
+  }, [applications]);
+
+  // Map of eligible jobs for student
+  const eligibleJobsMap = useMemo(() => {
+    const map = {};
+    studentEligibleJobs.forEach((ej) => {
+      map[ej.job_id] = ej;
+    });
+    return map;
+  }, [studentEligibleJobs]);
+
   const isDeadlineExpired = (deadlineStr) => {
     if (!deadlineStr) return false;
     const today = new Date().toISOString().split('T')[0];
     return deadlineStr < today;
   };
 
-  // Precompute dynamic drive statistics from shared mock data store
-  const driveStats = useMemo(() => {
-    const stats = {};
-    jobs.forEach((job) => {
-      // 1. Applicants for this drive
-      const applicants = applications.filter(
-        (a) => (a.job_id || a.jobId) === job.id
-      );
-      // 2. Eligible students in batch
-      const eligible = students.filter(
-        (s) => checkEligibility(s, job).eligible
-      );
-      // 3. Shortlisted / in-process applicants
-      const inProcess = applicants.filter((a) =>
-        ['SHORTLISTED', 'ASSESSMENT', 'INTERVIEW', 'SELECTED', 'OFFER_RELEASED'].includes(a.status)
-      );
-
-      stats[job.id] = {
-        applicantsCount: applicants.length > 0 ? applicants.length : (job.applied_count ?? job.appliedCount ?? 0),
-        applicantsList: applicants,
-        eligibleCount: eligible.length,
-        eligibleList: eligible,
-        eligiblePercent: students.length > 0 ? Math.round((eligible.length / students.length) * 100) : 0,
-        inProcessCount: inProcess.length,
-      };
-    });
-    return stats;
-  }, [jobs, applications, students]);
-
-  // Precompute student's applications & interviews (ONLY when activeRole === 'STUDENT')
-  const studentApplicationsMap = useMemo(() => {
-    if (activeRole !== 'STUDENT' || !currentStudent) return {};
-    const map = {};
-    applications.forEach((a) => {
-      const sid = a.student_id || a.studentId;
-      if (sid === currentStudent.id) {
-        const jid = a.job_id || a.jobId;
-        map[jid] = a;
-      }
-    });
-    return map;
-  }, [activeRole, currentStudent, applications]);
-
-  const studentInterviewsMap = useMemo(() => {
-    if (activeRole !== 'STUDENT' || !currentStudent) return {};
-    const map = {};
-    interviews.forEach((i) => {
-      const sid = i.student_id || i.studentId;
-      if (sid === currentStudent.id) {
-        if (i.application_id) map[i.application_id] = i;
-        if (i.company) map[i.company.toLowerCase()] = i;
-      }
-    });
-    return map;
-  }, [activeRole, currentStudent, interviews]);
-
-  // Student Application handler
+  // Student Apply Handler
   const handleApply = async (job) => {
-    if (activeRole !== 'STUDENT') {
-      toast.warning('Access Restricted', 'Only candidate student accounts can submit job applications.');
-      return;
-    }
-    const studentId = currentStudent?.id || 'student-rohit';
-
-    // Verify eligibility before submission
-    const evaluation = checkEligibility(currentStudent, job);
-    if (!evaluation.eligible) {
-      toast.warning('Ineligible Application', 'You do not meet the minimum eligibility benchmarks for this drive.');
-      return;
-    }
-    if ((job.status || 'OPEN') !== 'OPEN') {
-      toast.error('Drive Closed', 'This recruitment drive is currently closed.');
-      return;
-    }
-    if (isDeadlineExpired(job.deadline)) {
-      toast.error('Deadline Passed', 'The application window for this drive has closed.');
-      return;
-    }
-
     try {
-      await mockApi.applyToJob({
-        student_id: studentId,
-        job_id: job.id,
-      });
-      toast.placement(
-        `Applied to ${job.company}`,
-        `Registered for ${job.title} (${job.package_max_lpa || job.package_lpa} LPA)`
+      await applicationsService.applyToJob(job.id);
+      toast.success(
+        `Applied to ${job.company_name || job.company}`,
+        `Your application for ${job.title} was submitted successfully.`
       );
-      const [updatedJobs, updatedApps] = await Promise.all([
-        mockApi.getJobs(),
-        mockApi.getApplications(),
-      ]);
-      setJobs(updatedJobs);
-      setApplications(updatedApps);
-      if (selectedJob && selectedJob.id === job.id) {
-        setSelectedJob(updatedJobs.find((j) => j.id === job.id) || selectedJob);
-      }
+      loadData();
     } catch (err) {
-      console.error(err);
-      toast.error('Application Failed', 'An error occurred while submitting your application.');
+      const detail = err.response?.data?.detail || err.message;
+      toast.error('Application Failed', detail);
     }
   };
 
-  // Staff & Admin: Toggle Job Status (Open / Close)
+  // Staff: Add student to application
+  const handleStaffAddStudentToApp = async (jobId, studentId, studentName) => {
+    try {
+      await applicationsService.applyToJob(jobId, studentId);
+      toast.success(
+        'Student Added',
+        `${studentName} has been enrolled into the recruitment drive.`
+      );
+      loadData();
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      toast.error('Enrollment Failed', detail);
+    }
+  };
+
+  // Staff: Toggle status or Archive
   const handleToggleJobStatus = async (job) => {
     const nextStatus = (job.status || 'OPEN') === 'OPEN' ? 'CLOSED' : 'OPEN';
     try {
-      await mockApi.updateJob(job.id, { status: nextStatus });
-      const updatedJobs = await mockApi.getJobs();
-      setJobs(updatedJobs);
-      if (selectedJob && selectedJob.id === job.id) {
+      await jobsService.updateJob(job.id, { status: nextStatus });
+      toast.info(
+        'Drive Status Updated',
+        `${job.title} at ${job.company_name || job.company} is now ${nextStatus}.`
+      );
+      loadData();
+      if (selectedJob?.id === job.id) {
         setSelectedJob({ ...selectedJob, status: nextStatus });
       }
-      toast.info(
-        `Drive Status Updated`,
-        `${job.company} (${job.title}) is now marked as ${nextStatus}.`
-      );
     } catch (err) {
-      console.error(err);
-      toast.error('Update Failed', 'Could not update drive status.');
+      toast.error('Update Failed', err.response?.data?.detail || err.message);
+    }
+  };
+
+  const handleArchiveJob = async (job) => {
+    if (!window.confirm(`Archive recruitment drive for ${job.title}?`)) return;
+    try {
+      await jobsService.archiveJob(job.id);
+      toast.info('Drive Archived', `${job.title} has been archived.`);
+      loadData();
+      if (selectedJob?.id === job.id) {
+        setIsDrawerOpen(false);
+      }
+    } catch (err) {
+      toast.error('Archive Failed', err.response?.data?.detail || err.message);
+    }
+  };
+
+  const handleCloseExpired = async () => {
+    try {
+      const res = await jobsService.closeExpiredJobs();
+      toast.success('Expired Drives Closed', `Closed ${res.closed} expired recruitment drives.`);
+      loadData();
+    } catch (err) {
+      toast.error('Action Failed', err.response?.data?.detail || err.message);
     }
   };
 
   // Modal open handlers
   const openCreateModal = () => {
     setEditingJobId(null);
-    setNewTitle('');
-    setNewCompany('');
-    setNewPackageMin('14.0');
-    setNewPackageMax('18.0');
-    setNewDriveDate('2026-11-22');
-    setNewDeadline('2026-11-18');
-    setNewLocation('Bangalore, India (Hybrid)');
-    setNewMinCgpa('8.0');
-    setNewMaxBacklogs('0');
-    setNewAllowedBranches(['Computer Science', 'Information Tech.']);
-    setNewRequiredSkills([
-      { name: 'React', level: 'Advanced' },
-      { name: 'TypeScript', level: 'Intermediate' },
-    ]);
-    setNewTier('Dream');
-    setNewStatus('OPEN');
-    setNewDescription(
-      'Campus recruitment drive configured via PlaceTrack placement administration console.'
-    );
+    setFormCompanyId(companies[0]?.id ? String(companies[0].id) : '');
+    setFormTitle('');
+    setFormDescription('');
+    setFormPackage('12.0');
+    setFormPackageMax('16.0');
+    setFormDriveDate('');
+    setFormDeadline('');
+    setFormLocation('Bangalore, India');
+    setFormMinCgpa('7.5');
+    setFormMaxBacklogs('0');
+    setFormJobType('FULL_TIME');
+    setFormStatus('OPEN');
+    setFormDepartmentIds([]);
+    setFormSkills([]);
+    setSelectedSkillId(availableSkills[0]?.id ? String(availableSkills[0].id) : '');
+    setSelectedSkillLevel('INTERMEDIATE');
     setIsCreateModalOpen(true);
   };
 
-  const openEditModal = (jobToEdit) => {
-    if (!jobToEdit) return;
-    setEditingJobId(jobToEdit.id);
-    setNewTitle(jobToEdit.title || '');
-    setNewCompany(jobToEdit.company || '');
-    setNewPackageMin(String(jobToEdit.package_min_lpa ?? jobToEdit.package_lpa ?? 12));
-    setNewPackageMax(String(jobToEdit.package_max_lpa ?? jobToEdit.package_lpa ?? 16));
-    setNewDriveDate(jobToEdit.drive_date || '2026-11-20');
-    setNewDeadline(jobToEdit.deadline || '2026-11-15');
-    setNewLocation(jobToEdit.location || 'Bangalore, India');
-    setNewMinCgpa(String(jobToEdit.min_cgpa ?? 7.5));
-    setNewMaxBacklogs(String(jobToEdit.max_backlogs ?? 0));
-    setNewAllowedBranches(
-      jobToEdit.allowed_branches || jobToEdit.eligibleDepartments || ['Computer Science']
-    );
-    setNewRequiredSkills(jobToEdit.required_skills || []);
-    setNewTier(jobToEdit.tier || 'Dream');
-    setNewStatus(jobToEdit.status || 'OPEN');
-    setNewDescription(jobToEdit.description || '');
+  const openEditModal = (job) => {
+    setEditingJobId(job.id);
+    setFormCompanyId(String(job.company_id || ''));
+    setFormTitle(job.title || '');
+    setFormDescription(job.description || '');
+    setFormPackage(String(job.package || '12.0'));
+    setFormPackageMax(String(job.package_max || job.package || '16.0'));
+    setFormDriveDate(job.drive_date || '');
+    setFormDeadline(job.application_deadline || '');
+    setFormLocation(job.location || 'Bangalore, India');
+    setFormMinCgpa(String(job.minimum_cgpa ?? '7.5'));
+    setFormMaxBacklogs(String(job.max_backlogs ?? '0'));
+    setFormJobType(job.job_type || 'FULL_TIME');
+    setFormStatus(job.status || 'OPEN');
+    setFormDepartmentIds((job.departments || []).map((d) => d.department_id));
+    setFormSkills((job.skills || []).map((s) => ({
+      skill_id: s.skill_id,
+      skill_name: s.skill_name,
+      required_level: s.required_level || 'INTERMEDIATE',
+    })));
+    setSelectedSkillId(availableSkills[0]?.id ? String(availableSkills[0].id) : '');
+    setSelectedSkillLevel('INTERMEDIATE');
     setIsDrawerOpen(false);
     setIsCreateModalOpen(true);
   };
 
-  const handleToggleBranch = (branch) => {
-    setNewAllowedBranches((prev) =>
-      prev.includes(branch) ? prev.filter((b) => b !== branch) : [...prev, branch]
+  const handleToggleDepartment = (deptId) => {
+    setFormDepartmentIds((prev) =>
+      prev.includes(deptId) ? prev.filter((id) => id !== deptId) : [...prev, deptId]
     );
   };
 
   const handleAddSkillRule = () => {
-    if (!skillInputName.trim()) return;
-    setNewRequiredSkills((prev) => [
-      ...prev.filter((s) => s.name.toLowerCase() !== skillInputName.trim().toLowerCase()),
-      { name: skillInputName.trim(), level: skillInputLevel },
+    if (!selectedSkillId) return;
+    const skillObj = availableSkills.find((s) => String(s.id) === String(selectedSkillId));
+    if (!skillObj) return;
+
+    setFormSkills((prev) => [
+      ...prev.filter((s) => s.skill_id !== skillObj.id),
+      {
+        skill_id: skillObj.id,
+        skill_name: skillObj.name,
+        required_level: selectedSkillLevel,
+      },
     ]);
-    setSkillInputName('');
   };
 
-  const handleRemoveSkillRule = (name) => {
-    setNewRequiredSkills((prev) => prev.filter((s) => s.name !== name));
+  const handleRemoveSkillRule = (skillId) => {
+    setFormSkills((prev) => prev.filter((s) => s.skill_id !== skillId));
   };
 
   const handleSaveDriveForm = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newCompany.trim()) return;
+    if (!formTitle.trim() || !formCompanyId) {
+      toast.warning('Required Fields', 'Please select a company and provide a job title.');
+      return;
+    }
 
     const payload = {
-      title: newTitle.trim(),
-      company: newCompany.trim(),
-      package_min_lpa: parseFloat(newPackageMin) || 12,
-      package_max_lpa: parseFloat(newPackageMax) || 16,
-      package_lpa: parseFloat(newPackageMax) || 16,
-      drive_date: newDriveDate,
-      deadline: newDeadline,
-      location: newLocation,
-      min_cgpa: parseFloat(newMinCgpa) || 7.5,
-      max_backlogs: parseInt(newMaxBacklogs, 10) || 0,
-      allowed_branches:
-        newAllowedBranches.length > 0 ? newAllowedBranches : ['Computer Science'],
-      required_skills: newRequiredSkills,
-      tier: newTier,
-      status: newStatus,
-      description: newDescription.trim() || `${newCompany} campus recruitment drive for ${newTitle}.`,
+      company_id: parseInt(formCompanyId, 10),
+      title: formTitle.trim(),
+      description: formDescription.trim() || undefined,
+      minimum_cgpa: parseFloat(formMinCgpa) || 7.0,
+      package: parseFloat(formPackage) || 0,
+      package_max: parseFloat(formPackageMax) || parseFloat(formPackage) || 0,
+      max_backlogs: parseInt(formMaxBacklogs, 10) || 0,
+      job_type: formJobType,
+      location: formLocation.trim() || undefined,
+      drive_date: formDriveDate || null,
+      application_deadline: formDeadline || null,
+      status: formStatus,
+      skills: formSkills.map((s) => ({
+        skill_id: s.skill_id,
+        required_level: s.required_level,
+      })),
+      department_ids: formDepartmentIds,
     };
 
     try {
       if (editingJobId) {
-        await mockApi.updateJob(editingJobId, payload);
-        const updatedList = await mockApi.getJobs();
-        setJobs(updatedList);
-        toast.success(
-          'Drive Updated',
-          `Successfully updated recruitment parameters for ${newCompany}.`
-        );
+        await jobsService.updateJob(editingJobId, payload);
+        toast.success('Drive Updated', `Successfully updated recruitment parameters for ${formTitle}.`);
       } else {
-        const created = await mockApi.createJob(payload);
-        setJobs([created, ...jobs]);
-        toast.success(
-          'Drive Published',
-          `Published new ${newTier} campus recruitment drive for ${newCompany}.`
-        );
+        await jobsService.createJob(payload);
+        toast.success('Drive Published', `Published new recruitment drive: ${formTitle}.`);
       }
       setIsCreateModalOpen(false);
       setEditingJobId(null);
+      loadData();
     } catch (err) {
-      console.error(err);
-      toast.error('Save Failed', 'Could not save recruitment drive changes.');
+      const detail = err.response?.data?.detail || err.message;
+      toast.error('Save Failed', detail);
     }
   };
 
-  // Process & Filter Jobs based on active role
+  // Helper to derive tier label
+  const getJobTier = (job) => {
+    const pkg = Number(job.package_max || job.package || 0);
+    if (pkg >= 18) return 'SUPER_DREAM';
+    if (pkg >= 10) return 'DREAM';
+    return 'CORE';
+  };
+
+  // Filtered & Sorted Jobs
   const processedJobs = useMemo(() => {
     let result = jobs.map((job) => {
-      if (activeRole === 'STUDENT' && currentStudent) {
-        const evaluation = checkEligibility(currentStudent, job);
-        return {
-          ...job,
-          studentEvaluation: evaluation,
-          isEligible: evaluation.eligible,
-          matchPercent: evaluation.matchPercent,
-          failedRules: evaluation.failedRules,
-        };
-      }
+      const isEligible = Boolean(eligibleJobsMap[job.id]);
+      const matchScore = eligibleJobsMap[job.id]?.match_score || 0;
+      const tier = getJobTier(job);
       return {
         ...job,
-        isEligible: false,
-        matchPercent: 0,
-        failedRules: [],
+        tier,
+        isEligible,
+        matchScore: Math.round(matchScore),
       };
     });
 
-    // 1. Text Search Filter (company, role, location, branch)
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter(
         (job) =>
-          job.company.toLowerCase().includes(q) ||
-          job.title.toLowerCase().includes(q) ||
-          job.location.toLowerCase().includes(q) ||
-          (job.allowed_branches || []).some((b) => b.toLowerCase().includes(q))
+          (job.title || '').toLowerCase().includes(q) ||
+          (job.company_name || job.company || '').toLowerCase().includes(q) ||
+          (job.location || '').toLowerCase().includes(q)
       );
     }
 
-    // 2. Student-specific filter: "Eligible Only"
     if (activeRole === 'STUDENT' && eligibleOnly) {
       result = result.filter((job) => job.isEligible);
     }
 
-    // 3. Staff/Admin-specific filter: Status Filter
     if (activeRole !== 'STUDENT' && statusFilter !== 'ALL') {
       result = result.filter((job) => (job.status || 'OPEN') === statusFilter);
     }
 
-    // 4. Staff/Admin-specific filter: Branch Filter
-    if (activeRole !== 'STUDENT' && branchFilter !== 'ALL') {
-      result = result.filter((job) =>
-        (job.allowed_branches || job.eligibleDepartments || []).includes(branchFilter)
-      );
-    }
-
-    // 5. Tier Filter
     if (tierFilter !== 'ALL') {
       result = result.filter((job) => job.tier === tierFilter);
     }
 
-    // 6. Package Range Filter
     if (packageRangeFilter !== 'ALL') {
       result = result.filter((job) => {
-        const pkg = job.package_max_lpa || job.package_lpa || 0;
-        if (packageRangeFilter === 'UNDER_14') return pkg < 14;
-        if (packageRangeFilter === '14_TO_18') return pkg >= 14 && pkg <= 18;
+        const pkg = Number(job.package_max || job.package || 0);
+        if (packageRangeFilter === 'UNDER_10') return pkg < 10;
+        if (packageRangeFilter === '10_TO_18') return pkg >= 10 && pkg <= 18;
         if (packageRangeFilter === 'ABOVE_18') return pkg > 18;
         return true;
       });
     }
 
-    // 7. Sorting
     return result.sort((a, b) => {
       if (sortBy === 'best_match' && activeRole === 'STUDENT') {
         if (a.isEligible !== b.isEligible) return a.isEligible ? -1 : 1;
-        return (b.matchPercent || 0) - (a.matchPercent || 0);
+        return (b.matchScore || 0) - (a.matchScore || 0);
       }
       if (sortBy === 'highest_package') {
-        const pkgA = a.package_max_lpa || a.package_lpa || 0;
-        const pkgB = b.package_max_lpa || b.package_lpa || 0;
-        return pkgB - pkgA;
+        return Number(b.package_max || b.package || 0) - Number(a.package_max || a.package || 0);
       }
       if (sortBy === 'closing_soon') {
-        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-      }
-      if (sortBy === 'drive_date') {
-        return new Date(a.drive_date || a.deadline).getTime() - new Date(b.drive_date || b.deadline).getTime();
-      }
-      if (sortBy === 'most_applicants') {
-        const countA = driveStats[a.id]?.applicantsCount || 0;
-        const countB = driveStats[b.id]?.applicantsCount || 0;
-        return countB - countA;
+        const d1 = a.application_deadline ? new Date(a.application_deadline).getTime() : 9999999999999;
+        const d2 = b.application_deadline ? new Date(b.application_deadline).getTime() : 9999999999999;
+        return d1 - d2;
       }
       return 0;
     });
   }, [
     jobs,
-    activeRole,
-    currentStudent,
+    eligibleJobsMap,
     searchQuery,
     eligibleOnly,
     statusFilter,
-    branchFilter,
     tierFilter,
     packageRangeFilter,
     sortBy,
-    driveStats,
+    activeRole,
   ]);
-
-  // Executive Oversight Stats for ADMIN & STAFF
-  const overviewStats = useMemo(() => {
-    const totalDrives = jobs.length;
-    const openDrives = jobs.filter((j) => (j.status || 'OPEN') === 'OPEN').length;
-    const totalApps = applications.length;
-    const superDreamCount = jobs.filter((j) => j.tier === 'Super Dream').length;
-    const dreamCount = jobs.filter((j) => j.tier === 'Dream').length;
-    const avgPackage =
-      jobs.length > 0
-        ? (
-            jobs.reduce((acc, j) => acc + (j.package_max_lpa || j.package_lpa || 0), 0) /
-            jobs.length
-          ).toFixed(1)
-        : '0.0';
-
-    return {
-      totalDrives,
-      openDrives,
-      totalApps,
-      superDreamCount,
-      dreamCount,
-      avgPackage,
-    };
-  }, [jobs, applications]);
-
-  if (loading) {
-    return (
-      <div className="h-96 flex flex-col items-center justify-center gap-3">
-        <div className="w-9 h-9 rounded-full border-3 border-violet-600 border-t-transparent animate-spin" />
-        <p className="text-xs font-semibold text-slate-500">Loading placement recruitment drives...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 pb-12">
-      {/* 1. Header Bar: Dynamic based on Active Role */}
+      {/* 1. Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -560,25 +495,19 @@ export default function JobsPage() {
                 ? 'TPO Placement Operations'
                 : 'Student Candidate Portal'}
             </span>
-            <span className="text-xs text-[#64748B]">· {jobs.length} Published Drives</span>
+            <span className="text-xs text-[#64748B]">· {jobs.length} Recruitment Drives</span>
           </div>
           <h1 className="font-display font-bold text-2xl text-[#0B0B0F]">
-            {activeRole === 'STUDENT'
-              ? 'Available Campus Drives'
-              : activeRole === 'STAFF'
-              ? 'Campus Recruitment Drives Desk'
-              : 'Placement Drive Oversight & Governance'}
+            {activeRole === 'STUDENT' ? 'Available Campus Drives' : 'Campus Recruitment Drives'}
           </h1>
           <p className="text-xs text-[#64748B] mt-0.5">
             {activeRole === 'STUDENT'
-              ? 'Verify your eligibility criteria, track application status, and view scheduled interview slots'
-              : activeRole === 'STAFF'
-              ? 'Configure company CTC tiers, academic cutoffs, inspect candidate eligibility cohorts, and review applications'
-              : 'Institutional governance over campus hiring drives, CTC tiers, application volume, and recruitment policies'}
+              ? 'Verify your eligibility criteria, track application status, and view live recruitment drives'
+              : 'Configure company CTC tiers, academic cutoffs, inspect candidate eligibility cohorts, and review applications'}
           </p>
         </div>
 
-        {/* Header Action Controls */}
+        {/* Action Controls */}
         <div className="flex items-center gap-3">
           <div className="flex items-center bg-white rounded-full p-1 border border-black/5 shadow-xs">
             <button
@@ -604,89 +533,32 @@ export default function JobsPage() {
           </div>
 
           {(activeRole === 'ADMIN' || activeRole === 'STAFF') && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={Plus}
-              onClick={openCreateModal}
-            >
-              New Hiring Drive
-            </Button>
-          )}
-
-          {activeRole === 'ADMIN' && (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={BarChart3}
-              onClick={() => navigate('/dashboard/analytics')}
-            >
-              Analytics
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Clock}
+                onClick={handleCloseExpired}
+                title="Automatically mark drives with passed deadlines as CLOSED"
+              >
+                Close Expired
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Plus}
+                onClick={openCreateModal}
+              >
+                New Hiring Drive
+              </Button>
+            </>
           )}
         </div>
       </div>
 
-      {/* 2. Top Stats Band for ADMIN & STAFF */}
-      {(activeRole === 'ADMIN' || activeRole === 'STAFF') && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-4 rounded-2xl bg-white border border-black/5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Active Open Drives</p>
-              <p className="font-display font-extrabold text-2xl text-[#0B0B0F] mt-0.5">
-                {overviewStats.openDrives}{' '}
-                <span className="text-xs font-semibold text-[#64748B]">/ {overviewStats.totalDrives}</span>
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Briefcase className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Total Candidate Apps</p>
-              <p className="font-display font-extrabold text-2xl text-[#0B0B0F] mt-0.5">
-                {overviewStats.totalApps}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center">
-              <FileText className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Average CTC Package</p>
-              <p className="font-display font-extrabold text-2xl text-[#0B0B0F] mt-0.5">
-                {overviewStats.avgPackage} <span className="text-xs font-semibold text-[#64748B]">LPA</span>
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Award className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/5 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Super Dream / Dream</p>
-              <p className="font-display font-extrabold text-2xl text-[#0B0B0F] mt-0.5">
-                {overviewStats.superDreamCount + overviewStats.dreamCount}{' '}
-                <span className="text-xs font-semibold text-[#64748B]">Tiers</span>
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Sparkles className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Filters & Search Bar */}
+      {/* 2. Filters & Search Bar */}
       <div className="bg-white/85 backdrop-blur-md rounded-3xl p-4 border border-black/5 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        {/* Left Side: Search + Role Specific Filters */}
         <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
-          {/* Search Input */}
           <div className="relative min-w-[180px] max-w-xs flex-1">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -707,7 +579,6 @@ export default function JobsPage() {
             )}
           </div>
 
-          {/* STUDENT ONLY: "Eligible Only" Toggle */}
           {activeRole === 'STUDENT' && (
             <button
               type="button"
@@ -723,7 +594,6 @@ export default function JobsPage() {
             </button>
           )}
 
-          {/* STAFF & ADMIN ONLY: Drive Status Filter */}
           {activeRole !== 'STUDENT' && (
             <select
               value={statusFilter}
@@ -733,51 +603,33 @@ export default function JobsPage() {
               <option value="ALL">All Statuses</option>
               <option value="OPEN">Open Only</option>
               <option value="CLOSED">Closed Only</option>
+              <option value="ARCHIVED">Archived</option>
             </select>
           )}
 
-          {/* STAFF & ADMIN ONLY: Department / Branch Filter */}
-          {activeRole !== 'STUDENT' && (
-            <select
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-black/10 text-[#0B0B0F] outline-none"
-            >
-              <option value="ALL">All Branches</option>
-              {ALL_BRANCHES.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {/* Tier Filter */}
           <select
             value={tierFilter}
             onChange={(e) => setTierFilter(e.target.value)}
             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-black/10 text-[#0B0B0F] outline-none"
           >
             <option value="ALL">All Tiers</option>
-            <option value="Super Dream">Super Dream (&gt;18 LPA)</option>
-            <option value="Dream">Dream (12–18 LPA)</option>
-            <option value="Core">Core (&lt;12 LPA)</option>
+            <option value="SUPER_DREAM">Super Dream (&gt;18 LPA)</option>
+            <option value="DREAM">Dream (10–18 LPA)</option>
+            <option value="CORE">Core (&lt;10 LPA)</option>
           </select>
 
-          {/* Package Range Filter */}
           <select
             value={packageRangeFilter}
             onChange={(e) => setPackageRangeFilter(e.target.value)}
             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-black/10 text-[#0B0B0F] outline-none"
           >
             <option value="ALL">All Packages</option>
-            <option value="UNDER_14">&lt; 14 LPA</option>
-            <option value="14_TO_18">14 – 18 LPA</option>
+            <option value="UNDER_10">&lt; 10 LPA</option>
+            <option value="10_TO_18">10 – 18 LPA</option>
             <option value="ABOVE_18">18+ LPA</option>
           </select>
         </div>
 
-        {/* Right Side: Sort By */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-[#475569] flex items-center gap-1">
             <ArrowUpDown className="w-3.5 h-3.5 text-violet-600" />
@@ -797,67 +649,39 @@ export default function JobsPage() {
             ) : (
               <>
                 <option value="closing_soon">Closing Soon</option>
-                <option value="drive_date">Drive Date</option>
                 <option value="highest_package">Highest CTC</option>
-                <option value="most_applicants">Most Applicants</option>
               </>
             )}
           </select>
         </div>
       </div>
 
-      {/* 4. Main Drives Grid or Table */}
-      {processedJobs.length === 0 ? (
+      {/* 3. Main Grid or Table */}
+      {loading ? (
+        <div className="h-64 flex flex-col items-center justify-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-violet-600 border-t-transparent animate-spin" />
+          <p className="text-xs font-semibold text-slate-500">Loading placement recruitment drives...</p>
+        </div>
+      ) : processedJobs.length === 0 ? (
         <GlassCard variant="white" className="p-12 text-center space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center mx-auto">
             <Briefcase className="w-6 h-6" />
           </div>
           <h3 className="font-display font-bold text-base text-[#0B0B0F]">
-            No recruitment drives match your active filters
+            No recruitment drives found
           </h3>
           <p className="text-xs text-[#64748B] max-w-md mx-auto">
             Try adjusting your search query, tier filter, or package range to inspect all active campus recruitment drives.
           </p>
-          <div className="pt-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setSearchQuery('');
-                setEligibleOnly(false);
-                setStatusFilter('ALL');
-                setBranchFilter('ALL');
-                setTierFilter('ALL');
-                setPackageRangeFilter('ALL');
-                setSortBy(activeRole === 'STUDENT' ? 'best_match' : 'closing_soon');
-              }}
-            >
-              Reset All Filters
-            </Button>
-          </div>
         </GlassCard>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {processedJobs.map((job) => {
-            const stats = driveStats[job.id] || {
-              applicantsCount: 0,
-              eligibleCount: 0,
-              eligiblePercent: 0,
-              inProcessCount: 0,
-            };
-
             const isOpen = (job.status || 'OPEN') === 'OPEN';
-            const isExpired = isDeadlineExpired(job.deadline);
-
-            // STUDENT ROLE SPECIFICS:
+            const isExpired = isDeadlineExpired(job.application_deadline);
             const isStudent = activeRole === 'STUDENT';
             const studentApp = isStudent ? studentApplicationsMap[job.id] : null;
             const hasApplied = Boolean(studentApp);
-            const studentInterview = studentApp
-              ? studentInterviewsMap[studentApp.id] || studentInterviewsMap[job.company.toLowerCase()]
-              : null;
-            const rules = job.studentEvaluation || [];
-            const failed = job.failedRules || [];
 
             return (
               <GlassCard
@@ -872,24 +696,23 @@ export default function JobsPage() {
                 className="p-6 flex flex-col justify-between relative cursor-pointer group"
               >
                 <div>
-                  {/* Top Header Row: Company Logo, Tier, Status, Package & (Match % Ring for Student ONLY) */}
                   <div className="flex items-start justify-between gap-2 mb-3.5">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-100 to-indigo-100 flex items-center justify-center font-display font-bold text-xs text-violet-700 flex-shrink-0">
-                        {job.company.slice(0, 2).toUpperCase()}
+                        {(job.company_name || job.company || 'CO').slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              job.tier === 'Super Dream'
+                              job.tier === 'SUPER_DREAM'
                                 ? 'bg-amber-100 text-amber-800'
-                                : job.tier === 'Dream'
+                                : job.tier === 'DREAM'
                                 ? 'bg-violet-100 text-violet-700'
                                 : 'bg-blue-100 text-blue-700'
                             }`}
                           >
-                            {job.tier || 'Dream'}
+                            {job.tier}
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -902,17 +725,16 @@ export default function JobsPage() {
                           </span>
                         </div>
                         <p className="text-[11px] text-[#64748B] font-medium mt-0.5 truncate">
-                          Drive: {job.drive_date || job.deadline}
+                          Deadline: {job.application_deadline || 'Open'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Right side: Package and (Match Ring ONLY for Student) */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {isStudent && job.isEligible && (
                         <div
                           className="relative w-10 h-10 flex items-center justify-center flex-shrink-0"
-                          title={`Your Match Score: ${job.matchPercent}%`}
+                          title={`Your Match Score: ${job.matchScore}%`}
                         >
                           <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                             <circle
@@ -930,283 +752,87 @@ export default function JobsPage() {
                               stroke="#10B981"
                               strokeWidth="3.5"
                               strokeDasharray="94.2"
-                              strokeDashoffset={94.2 - (94.2 * job.matchPercent) / 100}
+                              strokeDashoffset={94.2 - (94.2 * job.matchScore) / 100}
                               strokeLinecap="round"
                               fill="none"
                             />
                           </svg>
                           <span className="absolute font-display font-black text-[10px] text-emerald-700">
-                            {job.matchPercent}%
+                            {job.matchScore}%
                           </span>
                         </div>
                       )}
 
                       <span className="font-display font-black text-xs sm:text-sm text-[#0B0B0F] bg-[#F4F4F7] px-2.5 py-1.5 rounded-full tabular-nums whitespace-nowrap">
-                        {job.package_min_lpa && job.package_min_lpa !== job.package_max_lpa
-                          ? `${job.package_min_lpa}–${job.package_max_lpa}`
-                          : job.package_max_lpa || job.package_lpa}{' '}
+                        {job.package_max && job.package_max !== job.package
+                          ? `${job.package}–${job.package_max}`
+                          : job.package || '0'}{' '}
                         LPA
                       </span>
                     </div>
                   </div>
 
-                  {/* Title & Company */}
-                  <h3 className="font-display font-bold text-base text-[#0B0B0F] mb-0.5 group-hover:text-violet-700 transition-colors">
+                  <h3 className="font-display font-bold text-base text-[#0B0B0F] group-hover:text-violet-600 transition-colors">
                     {job.title}
                   </h3>
-                  <p className="text-xs text-[#64748B] mb-3">
-                    {job.company} · {job.location}
+                  <p className="text-xs font-semibold text-[#475569] mb-3">
+                    {job.company_name || job.company} · {job.location || 'India'}
                   </p>
 
-                  {/* ============================================================ */}
-                  {/* MIDDLE SECTION: STUDENT VS STAFF/ADMIN                       */}
-                  {/* ============================================================ */}
-
-                  {isStudent ? (
-                    /* STUDENT VIEW: Personal Eligibility Checklist */
-                    <div className="bg-[#F9F9FB] rounded-2xl p-3 border border-black/5 space-y-1.5 mb-4">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
-                        <span>Your Eligibility Checklist</span>
-                        <span className={job.isEligible ? 'text-emerald-700 font-extrabold' : 'text-rose-600 font-extrabold'}>
-                          {rules.filter((r) => r.passed).length}/{rules.length} Met
-                        </span>
-                      </div>
-                      <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                        {rules.map((r, idx) => (
-                          <div
-                            key={idx}
-                            className={`flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded-lg ${
-                              r.passed
-                                ? 'bg-emerald-50/70 text-emerald-900'
-                                : 'bg-rose-50/80 text-rose-900 font-semibold'
-                            }`}
-                          >
-                            <span className="truncate">{r.label}</span>
-                            {r.passed ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                            ) : (
-                              <XCircle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* If student has applied, show live application stage & interview */}
-                      {hasApplied && (
-                        <div className="mt-2 pt-2 border-t border-black/5 flex flex-col gap-1 text-[11px]">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#64748B]">Application Status:</span>
-                            <span className="font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[10px] uppercase">
-                              {studentApp.status.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                          {studentInterview && (
-                            <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 flex items-center justify-between">
-                              <span className="font-semibold truncate">
-                                📅 {studentInterview.round_name}
-                              </span>
-                              <span className="text-[10px] font-bold">
-                                {studentInterview.date} · {studentInterview.reporting_time}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* STAFF & ADMIN VIEW: Drive-Wide Cohort Metrics & Operational Parameters */
-                    <div className="bg-[#F8F9FC] rounded-2xl p-3 border border-black/5 space-y-2 mb-4 text-xs">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-                        <span>Drive Operational Overview</span>
-                        <span className="font-mono text-violet-700">Openings: {job.openings || 5}</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 pt-0.5">
-                        <div className="bg-white p-2 rounded-xl border border-black/5">
-                          <span className="text-[10px] text-[#64748B] block">Total Applicants</span>
-                          <span className="font-display font-extrabold text-sm text-[#0B0B0F]">
-                            {stats.applicantsCount}{' '}
-                            <span className="text-[10px] font-normal text-slate-500">students</span>
-                          </span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-black/5">
-                          <span className="text-[10px] text-[#64748B] block">Eligible in Batch</span>
-                          <span className="font-display font-extrabold text-sm text-emerald-700">
-                            {stats.eligibleCount}{' '}
-                            <span className="text-[10px] font-normal text-emerald-800">
-                              ({stats.eligiblePercent}%)
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-[11px] text-[#475569] space-y-1 pt-1 border-t border-black/5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Cutoff Benchmark:</span>
-                          <span className="font-bold text-[#0B0B0F]">
-                            CGPA ≥ {job.min_cgpa} · Max {job.max_backlogs ?? 0} Backlog
-                          </span>
-                        </div>
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-slate-500 flex-shrink-0">Branches:</span>
-                          <span className="font-semibold text-[#0B0B0F] text-right truncate">
-                            {(job.allowed_branches || job.eligibleDepartments || []).join(', ')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700">
+                      Min CGPA: {job.minimum_cgpa}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700">
+                      Backlogs ≤ {job.max_backlogs}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700">
+                      {job.job_type}
+                    </span>
+                  </div>
                 </div>
 
-                {/* ============================================================ */}
-                {/* BOTTOM ACTION AREA: ROLE-BASED ACTIONS                      */}
-                {/* ============================================================ */}
-                <div className="pt-3 border-t border-black/5 space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px] text-[#64748B]">
-                    <span>
-                      Deadline: <strong className="text-[#0B0B0F]">{job.deadline}</strong>
-                      {isExpired && <span className="ml-1 text-rose-600 font-bold">(Passed)</span>}
-                    </span>
-                    <span>{stats.applicantsCount} applied</span>
-                  </div>
-
+                <div className="pt-3 border-t border-black/5 flex items-center justify-between">
                   {isStudent ? (
-                    /* ---------------- STUDENT ACTIONS ---------------- */
-                    <div className="flex items-center justify-between gap-2">
-                      {job.isEligible ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                          <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                          Eligible ({job.matchPercent}%)
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 truncate">
-                          <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                          {failed.length} Gap{failed.length > 1 ? 's' : ''} Found
-                        </span>
-                      )}
-
-                      {hasApplied ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedJob(job);
-                            setDrawerActiveTab('details');
-                            setIsDrawerOpen(true);
-                          }}
-                        >
-                          View Application
-                        </Button>
-                      ) : job.isEligible && isOpen && !isExpired ? (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleApply(job);
-                          }}
-                        >
-                          Apply Now
-                        </Button>
-                      ) : (
-                        /* Disabled / Locked State with Explanation */
-                        <div
-                          className="relative group/lock"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            disabled
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-200 text-slate-500 text-xs font-bold cursor-not-allowed"
-                          >
-                            <Lock className="w-3 h-3" />
-                            <span>
-                              {!isOpen
-                                ? 'Drive Closed'
-                                : isExpired
-                                ? 'Deadline Passed'
-                                : 'Ineligible'}
-                            </span>
-                          </button>
-
-                          {/* Hover Tooltip explaining exact disabled reason */}
-                          <div className="invisible group-hover/lock:visible opacity-0 group-hover/lock:opacity-100 transition-all absolute bottom-full right-0 mb-2 w-64 p-3 rounded-2xl bg-[#0B0B0F] text-white text-[11px] shadow-xl z-40 pointer-events-none">
-                            <p className="font-bold text-rose-300 mb-1">
-                              {!isOpen
-                                ? 'Drive is Closed'
-                                : isExpired
-                                ? `Deadline expired on ${job.deadline}`
-                                : 'Eligibility Gaps:'}
-                            </p>
-                            {!isOpen ? (
-                              <p className="text-slate-200">
-                                This recruitment drive has been closed by the TPO placement desk.
-                              </p>
-                            ) : isExpired ? (
-                              <p className="text-slate-200">
-                                The application window for this campus drive ended on {job.deadline}.
-                              </p>
-                            ) : (
-                              <ul className="space-y-1 list-disc list-inside text-slate-200">
-                                {failed.map((f, i) => (
-                                  <li key={i}>{f.label}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    hasApplied ? (
+                      <span className="text-xs font-bold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-full">
+                        ✓ Applied ({studentApp.status})
+                      </span>
+                    ) : job.isEligible && isOpen && !isExpired ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleApply(job);
+                        }}
+                      >
+                        Apply Now
+                      </Button>
+                    ) : (
+                      <span
+                        className="text-xs font-semibold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full flex items-center gap-1 cursor-help"
+                        title={!isOpen ? 'Drive closed' : isExpired ? 'Deadline passed' : 'Academic or policy gap'}
+                      >
+                        <Lock className="w-3 h-3" />
+                        Ineligible
+                      </span>
+                    )
                   ) : (
-                    /* ---------------- STAFF & ADMIN ACTIONS ---------------- */
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleJobStatus(job);
-                          }}
-                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full transition-colors flex items-center gap-1 ${
-                            isOpen
-                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                          }`}
-                          title={isOpen ? 'Click to close drive' : 'Click to reopen drive'}
-                        >
-                          {isOpen ? 'Close Drive' : 'Re-open Drive'}
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(job);
-                          }}
-                        >
-                          Manage Drive
-                        </Button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedJob(job);
-                            setDrawerActiveTab('eligible');
-                            setIsDrawerOpen(true);
-                          }}
-                          className="px-2.5 py-1.5 rounded-full text-xs font-bold bg-[#F4F4F7] hover:bg-[#EBEBEF] text-[#0B0B0F] transition-colors"
-                          title="View Eligible Candidates"
-                        >
-                          Pool ({stats.eligibleCount})
-                        </button>
-                      </div>
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleJobStatus(job)}
+                        className="text-xs font-bold text-slate-600 hover:text-black underline"
+                      >
+                        {isOpen ? 'Close' : 'Reopen'}
+                      </button>
                     </div>
                   )}
+
+                  <span className="text-xs font-bold text-violet-600 group-hover:underline">
+                    View Details →
+                  </span>
                 </div>
               </GlassCard>
             );
@@ -1224,18 +850,17 @@ export default function JobsPage() {
                   <th className="py-3.5 px-6">CTC Package</th>
                   <th className="py-3.5 px-6">Academic Cutoff</th>
                   {activeRole === 'STUDENT' ? (
-                    <th className="py-3.5 px-6">Your Eligibility</th>
+                    <th className="py-3.5 px-6">Eligibility</th>
                   ) : (
-                    <th className="py-3.5 px-6">Candidate Pool / Apps</th>
+                    <th className="py-3.5 px-6">Deadline</th>
                   )}
                   <th className="py-3.5 px-6 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
                 {processedJobs.map((job) => {
-                  const stats = driveStats[job.id] || { applicantsCount: 0, eligibleCount: 0 };
                   const isOpen = (job.status || 'OPEN') === 'OPEN';
-                  const isExpired = isDeadlineExpired(job.deadline);
+                  const isExpired = isDeadlineExpired(job.application_deadline);
                   const isStudent = activeRole === 'STUDENT';
                   const studentApp = isStudent ? studentApplicationsMap[job.id] : null;
                   const hasApplied = Boolean(studentApp);
@@ -1253,7 +878,7 @@ export default function JobsPage() {
                       <td className="py-4 px-6">
                         <p className="font-bold text-[#0B0B0F] text-sm">{job.title}</p>
                         <p className="text-[11px] text-[#64748B]">
-                          {job.company} · {job.location}
+                          {job.company_name || job.company} · {job.location || 'India'}
                         </p>
                       </td>
                       <td className="py-4 px-6 whitespace-nowrap">
@@ -1269,49 +894,41 @@ export default function JobsPage() {
                         </span>
                       </td>
                       <td className="py-4 px-6 font-display font-bold text-[#0B0B0F] whitespace-nowrap tabular-nums">
-                        {job.package_min_lpa}–{job.package_max_lpa} LPA
+                        {job.package_max && job.package_max !== job.package
+                          ? `${job.package}–${job.package_max}`
+                          : job.package || '0'}{' '}
+                        LPA
                       </td>
                       <td className="py-4 px-6 font-semibold whitespace-nowrap">
-                        CGPA ≥ {job.min_cgpa} · Max {job.max_backlogs ?? 0} Backlog
+                        CGPA ≥ {job.minimum_cgpa} · Max {job.max_backlogs} Backlog
                       </td>
 
                       {isStudent ? (
                         <td className="py-4 px-6 whitespace-nowrap">
                           {hasApplied ? (
                             <span className="font-bold text-violet-700 bg-violet-50 px-2.5 py-1 rounded-full text-xs">
-                              ✓ Applied ({studentApp.status.replace(/_/g, ' ')})
+                              ✓ Applied ({studentApp.status})
                             </span>
                           ) : job.isEligible ? (
                             <span className="font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full text-xs">
-                              {job.matchPercent}% Match · Eligible
+                              {job.matchScore}% Match · Eligible
                             </span>
                           ) : (
                             <span className="font-semibold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full text-xs">
-                              Ineligible ({job.failedRules?.length || 1} Gaps)
+                              Ineligible
                             </span>
                           )}
                         </td>
                       ) : (
-                        <td className="py-4 px-6 whitespace-nowrap text-xs">
-                          <span className="font-bold text-[#0B0B0F]">{stats.applicantsCount} applied</span>
-                          <span className="text-slate-400 mx-1">·</span>
-                          <span className="font-semibold text-emerald-700">{stats.eligibleCount} eligible</span>
+                        <td className="py-4 px-6 whitespace-nowrap text-xs text-[#64748B]">
+                          {job.application_deadline || 'No deadline'}
                         </td>
                       )}
 
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         {isStudent ? (
                           hasApplied ? (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedJob(job);
-                                setDrawerActiveTab('details');
-                                setIsDrawerOpen(true);
-                              }}
-                            >
+                            <Button variant="secondary" size="sm">
                               View
                             </Button>
                           ) : job.isEligible && isOpen && !isExpired ? (
@@ -1323,7 +940,7 @@ export default function JobsPage() {
                                 handleApply(job);
                               }}
                             >
-                              Apply Now
+                              Apply
                             </Button>
                           ) : (
                             <Button variant="secondary" size="sm" disabled>
@@ -1332,19 +949,12 @@ export default function JobsPage() {
                           )
                         ) : (
                           <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleJobStatus(job)}
-                              className="text-[11px] font-bold text-slate-600 hover:text-black underline mr-1"
-                            >
-                              {isOpen ? 'Close' : 'Reopen'}
-                            </button>
                             <Button
                               variant="secondary"
                               size="sm"
                               onClick={() => openEditModal(job)}
                             >
-                              Manage
+                              Edit
                             </Button>
                           </div>
                         )}
@@ -1358,9 +968,7 @@ export default function JobsPage() {
         </GlassCard>
       )}
 
-      {/* ============================================================ */}
-      {/* 5. JOB DRAWER MODAL (ROLE-SPECIFIC DETAILS & WORKFLOWS)       */}
-      {/* ============================================================ */}
+      {/* 4. JOB DETAIL DRAWER */}
       <Modal
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
@@ -1368,15 +976,16 @@ export default function JobsPage() {
         title={selectedJob ? selectedJob.title : 'Hiring Drive'}
         subtitle={
           selectedJob
-            ? `${selectedJob.company} · ${selectedJob.tier || 'Dream'} · ${
-                selectedJob.package_min_lpa || selectedJob.package_lpa
-              }–${selectedJob.package_max_lpa || selectedJob.package_lpa} LPA`
+            ? `${selectedJob.company_name || selectedJob.company} · ${selectedJob.tier} · ${
+                selectedJob.package_max && selectedJob.package_max !== selectedJob.package
+                  ? `${selectedJob.package}–${selectedJob.package_max}`
+                  : selectedJob.package || '0'
+              } LPA`
             : ''
         }
       >
         {selectedJob && (
           <div className="space-y-6">
-            {/* Drawer Tabs Bar */}
             <div className="flex bg-[#ECECEF] rounded-full p-1 text-xs font-semibold">
               <button
                 type="button"
@@ -1387,7 +996,7 @@ export default function JobsPage() {
                     : 'text-[#64748B]'
                 }`}
               >
-                Drive Specifications
+                Specifications
               </button>
 
               {activeRole === 'STUDENT' ? (
@@ -1400,56 +1009,43 @@ export default function JobsPage() {
                       : 'text-[#64748B]'
                   }`}
                 >
-                  Your Eligibility Checklist
+                  Criteria Checklist
                 </button>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerActiveTab('eligible')}
-                    className={`flex-1 py-1.5 rounded-full text-center transition-all ${
-                      drawerActiveTab === 'eligible'
-                        ? 'bg-white text-[#0B0B0F] shadow-xs'
-                        : 'text-[#64748B]'
-                    }`}
-                  >
-                    Eligible Cohort ({driveStats[selectedJob.id]?.eligibleCount || 0})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerActiveTab('applications')}
-                    className={`flex-1 py-1.5 rounded-full text-center transition-all ${
-                      drawerActiveTab === 'applications'
-                        ? 'bg-white text-[#0B0B0F] shadow-xs'
-                        : 'text-[#64748B]'
-                    }`}
-                  >
-                    Applicants ({driveStats[selectedJob.id]?.applicantsCount || 0})
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => setDrawerActiveTab('eligible')}
+                  className={`flex-1 py-1.5 rounded-full text-center transition-all ${
+                    drawerActiveTab === 'eligible'
+                      ? 'bg-white text-[#0B0B0F] shadow-xs'
+                      : 'text-[#64748B]'
+                  }`}
+                >
+                  Eligible Students ({eligibleStudentsList.length})
+                </button>
               )}
             </div>
 
-            {/* TAB 1: Drive Specifications & Description */}
+            {/* TAB 1: Specifications */}
             {drawerActiveTab === 'details' && (
               <div className="space-y-5">
-                {/* Role Description */}
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-100">
                   <span className="text-[11px] font-bold text-violet-800 uppercase tracking-wider block mb-1">
-                    Role Description & Scope
+                    Role Description
                   </span>
                   <p className="text-xs text-[#0B0B0F] leading-relaxed">
-                    {selectedJob.description ||
-                      'Comprehensive campus placement drive configured with automated eligibility verification and multi-stage evaluation.'}
+                    {selectedJob.description || 'No description provided.'}
                   </p>
                 </div>
 
-                {/* Key Parameters */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="p-3 rounded-xl bg-slate-50 border border-black/5">
                     <span className="text-[#64748B] block text-[10px] uppercase font-bold">CTC Package</span>
                     <span className="font-display font-extrabold text-[#0B0B0F] text-sm">
-                      {selectedJob.package_min_lpa}–{selectedJob.package_max_lpa} LPA
+                      {selectedJob.package_max && selectedJob.package_max !== selectedJob.package
+                        ? `${selectedJob.package}–${selectedJob.package_max}`
+                        : selectedJob.package || '0'}{' '}
+                      LPA
                     </span>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-50 border border-black/5">
@@ -1460,101 +1056,56 @@ export default function JobsPage() {
                   </div>
                 </div>
 
-                {/* Academic Cutoff Parameters */}
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-black/5 space-y-2 text-xs">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] block">
-                    Institutional Eligibility Rules Configured
+                    Academic Cutoff Criteria
                   </span>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#64748B]">Minimum CGPA Required:</span>
-                    <span className="font-bold text-[#0B0B0F]">{selectedJob.min_cgpa}</span>
+                    <span className="text-[#64748B]">Minimum CGPA:</span>
+                    <span className="font-bold text-[#0B0B0F]">{selectedJob.minimum_cgpa}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#64748B]">Maximum Active Backlogs:</span>
-                    <span className="font-bold text-[#0B0B0F]">{selectedJob.max_backlogs ?? 0}</span>
+                    <span className="text-[#64748B]">Max Active Backlogs:</span>
+                    <span className="font-bold text-[#0B0B0F]">{selectedJob.max_backlogs}</span>
                   </div>
                 </div>
 
-                {/* Allowed Branches */}
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-[#475569] uppercase tracking-wider block">
-                    Allowed Branches
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(selectedJob.allowed_branches || selectedJob.eligibleDepartments || []).map((d) => (
-                      <span
-                        key={d}
-                        className="text-xs font-semibold px-3 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200"
-                      >
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Required Skills */}
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-[#475569] uppercase tracking-wider block">
-                    Required Skills & Proficiency Benchmarks
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(selectedJob.required_skills || []).map((sk) => (
-                      <span
-                        key={sk.name}
-                        className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200"
-                      >
-                        {sk.name} · <strong className="text-violet-700">{sk.level}</strong>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Schedule & Deadlines */}
-                <div className="pt-4 border-t border-black/5 grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-[#64748B] block">Drive Date:</span>
-                    <span className="font-bold text-[#0B0B0F]">
-                      {selectedJob.drive_date || '2026-11-20'}
+                {selectedJob.departments && selectedJob.departments.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-bold text-[#475569] uppercase tracking-wider block">
+                      Eligible Departments
                     </span>
-                  </div>
-                  <div>
-                    <span className="text-[#64748B] block">Application Deadline:</span>
-                    <span className="font-bold text-[#0B0B0F]">
-                      {selectedJob.deadline}
-                      {isDeadlineExpired(selectedJob.deadline) && (
-                        <span className="text-rose-600 ml-1 font-bold">(Closed)</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {/* If Student and applied, show live application progress */}
-                {activeRole === 'STUDENT' && studentApplicationsMap[selectedJob.id] && (
-                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-emerald-900">
-                        ✓ Your Application is Active
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 uppercase">
-                        {studentApplicationsMap[selectedJob.id].status.replace(/_/g, ' ')}
-                      </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedJob.departments.map((d) => (
+                        <span
+                          key={d.department_id}
+                          className="text-xs font-semibold px-3 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200"
+                        >
+                          {d.department_name}
+                        </span>
+                      ))}
                     </div>
-                    <p className="text-xs text-emerald-800">
-                      Applied on: {studentApplicationsMap[selectedJob.id].applied_date} · Current Round:{' '}
-                      <strong>{studentApplicationsMap[selectedJob.id].current_round || 'Assessment'}</strong>
-                    </p>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => navigate('/dashboard/my-applications')}
-                      className="w-full mt-1"
-                    >
-                      Track Full Application Timeline →
-                    </Button>
                   </div>
                 )}
 
-                {/* Drawer Footer Actions */}
+                {selectedJob.skills && selectedJob.skills.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-bold text-[#475569] uppercase tracking-wider block">
+                      Required Skills & Levels
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedJob.skills.map((sk) => (
+                        <span
+                          key={sk.skill_id}
+                          className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200"
+                        >
+                          {sk.skill_name} · <strong className="text-violet-700">{sk.required_level}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="pt-4 border-t border-black/5 flex items-center justify-end gap-2.5">
                   {activeRole === 'STUDENT' ? (
                     !studentApplicationsMap[selectedJob.id] && (
@@ -1562,9 +1113,9 @@ export default function JobsPage() {
                         variant="primary"
                         size="sm"
                         disabled={
-                          !checkEligibility(currentStudent, selectedJob).eligible ||
+                          !eligibleJobsMap[selectedJob.id] ||
                           (selectedJob.status || 'OPEN') !== 'OPEN' ||
-                          isDeadlineExpired(selectedJob.deadline)
+                          isDeadlineExpired(selectedJob.application_deadline)
                         }
                         onClick={() => handleApply(selectedJob)}
                       >
@@ -1581,11 +1132,19 @@ export default function JobsPage() {
                         {(selectedJob.status || 'OPEN') === 'OPEN' ? 'Close Drive' : 'Reopen Drive'}
                       </Button>
                       <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={Archive}
+                        onClick={() => handleArchiveJob(selectedJob)}
+                      >
+                        Archive
+                      </Button>
+                      <Button
                         variant="primary"
                         size="sm"
                         onClick={() => openEditModal(selectedJob)}
                       >
-                        Edit Recruitment Drive
+                        Edit Drive
                       </Button>
                     </>
                   )}
@@ -1593,369 +1152,284 @@ export default function JobsPage() {
               </div>
             )}
 
-            {/* TAB 2: ELIGIBLE COHORT / STUDENT EVALUATION */}
+            {/* TAB 2: ELIGIBLE COHORT (STAFF) OR CRITERIA CHECKLIST (STUDENT) */}
             {drawerActiveTab === 'eligible' && (
               <div className="space-y-4">
                 {activeRole === 'STUDENT' ? (
-                  /* STUDENT VIEW: Student's Own Rule-By-Rule Breakdown */
+                  /* STUDENT VIEW: criteria checklist from fn_eligibility_check */
                   <div className="space-y-3">
-                    <p className="text-xs text-[#64748B]">
-                      Your profile benchmarked against {selectedJob.company} requirements.
-                    </p>
-                    <div className="space-y-2">
-                      {checkEligibility(currentStudent, selectedJob).map((rule, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
-                            rule.passed
-                              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                              : 'bg-rose-50/80 border-rose-200 text-rose-900 font-semibold'
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[#64748B]">
+                        Evaluation from database eligibility engine:
+                      </p>
+                      {jobEligibilityCriteria && (
+                        <span
+                          className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                            jobEligibilityCriteria.eligible && jobEligibilityCriteria.policy_ok
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          <div>
-                            <p className="font-bold">{rule.rule} Criterion</p>
-                            <p className="text-[11px] opacity-90 mt-0.5">{rule.label}</p>
-                          </div>
-                          <span
-                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                              rule.passed
-                                ? 'bg-emerald-200/80 text-emerald-900'
-                                : 'bg-rose-200/80 text-rose-900'
+                          {jobEligibilityCriteria.eligible && jobEligibilityCriteria.policy_ok
+                            ? '✓ Eligible'
+                            : '✕ Ineligible'}
+                        </span>
+                      )}
+                    </div>
+
+                    {loadingEligibility ? (
+                      <div className="py-8 text-center text-xs text-slate-500">
+                        Checking database eligibility rules...
+                      </div>
+                    ) : jobEligibilityCriteria?.criteria ? (
+                      <div className="space-y-2">
+                        {jobEligibilityCriteria.criteria.map((c, idx) => (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+                              c.passed
+                                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                                : 'bg-rose-50/80 border-rose-200 text-rose-900 font-semibold'
                             }`}
                           >
-                            {rule.passed ? 'PASSED' : 'GAP FOUND'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                            <div>
+                              <p className="font-bold">{c.rule} ({c.category})</p>
+                              <p className="text-[11px] opacity-90 mt-0.5">
+                                Required: {c.required} · Your profile: {c.actual}
+                              </p>
+                            </div>
+                            <span
+                              className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                                c.passed
+                                  ? 'bg-emerald-200/80 text-emerald-900'
+                                  : 'bg-rose-200/80 text-rose-900'
+                              }`}
+                            >
+                              {c.passed ? 'PASSED' : 'GAP'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center text-xs text-slate-500">
+                        Unable to compute eligibility checklist.
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  /* STAFF & ADMIN VIEW: Full Registered Student Cohort with Eligibility & Gap analysis */
+                  /* STAFF VIEW: fn_eligible_students(:job_id) */
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs">
                       <p className="text-[#64748B]">
-                        Batch Eligibility Analysis for {selectedJob.company}
+                        Eligible student cohort from database:
                       </p>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setDrawerCohortFilter('ALL')}
-                          className={`px-2 py-1 rounded-md text-[10px] font-bold ${
-                            drawerCohortFilter === 'ALL'
-                              ? 'bg-[#0B0B0F] text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          All ({students.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDrawerCohortFilter('ELIGIBLE')}
-                          className={`px-2 py-1 rounded-md text-[10px] font-bold ${
-                            drawerCohortFilter === 'ELIGIBLE'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
-                          Eligible
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDrawerCohortFilter('INELIGIBLE')}
-                          className={`px-2 py-1 rounded-md text-[10px] font-bold ${
-                            drawerCohortFilter === 'INELIGIBLE'
-                              ? 'bg-rose-600 text-white'
-                              : 'bg-rose-50 text-rose-700'
-                          }`}
-                        >
-                          Ineligible
-                        </button>
-                      </div>
+                      <span className="font-bold text-emerald-700">
+                        {eligibleStudentsList.length} Eligible Candidates
+                      </span>
                     </div>
 
-                    <div className="divide-y divide-black/5 max-h-[460px] overflow-y-auto pr-1">
-                      {students
-                        .filter((std) => {
-                          const res = checkEligibility(std, selectedJob);
-                          if (drawerCohortFilter === 'ELIGIBLE') return res.eligible;
-                          if (drawerCohortFilter === 'INELIGIBLE') return !res.eligible;
-                          return true;
-                        })
-                        .map((std) => {
-                          const res = checkEligibility(std, selectedJob);
-                          return (
-                            <div
-                              key={std.id}
-                              className="py-3 flex items-center justify-between gap-3"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <Avatar src={std.photo_url || std.avatar} name={std.name} size="xs" />
-                                <div className="min-w-0">
-                                  <p className="font-bold text-xs text-[#0B0B0F] truncate">{std.name}</p>
-                                  <p className="text-[10px] text-[#64748B] truncate">
-                                    {std.roll_number} · {std.department} · CGPA {std.cgpa}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex-shrink-0">
-                                {res.eligible ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    Eligible ({res.matchPercent}%)
-                                  </span>
-                                ) : (
-                                  <span
-                                    className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full max-w-[140px] truncate"
-                                    title={res.failedRules.map((f) => f.label).join(', ')}
-                                  >
-                                    <XCircle className="w-3 h-3 flex-shrink-0" />
-                                    {res.failedRules[0]?.rule || 'Ineligible'}
-                                  </span>
-                                )}
+                    {loadingEligibleStudents ? (
+                      <div className="py-8 text-center text-xs text-slate-500">
+                        Evaluating candidate cohort...
+                      </div>
+                    ) : eligibleStudentsList.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-500">
+                        No students currently meet all eligibility benchmarks for this drive.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-black/5 max-h-[460px] overflow-y-auto pr-1">
+                        {eligibleStudentsList.map((std) => (
+                          <div
+                            key={std.student_id}
+                            className="py-3 flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <Avatar name={std.student_name} size="xs" />
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-[#0B0B0F] truncate">{std.student_name}</p>
+                                <p className="text-[10px] text-[#64748B] truncate">
+                                  {std.roll_number} · {std.department} · CGPA {std.cgpa}
+                                </p>
                               </div>
                             </div>
-                          );
-                        })}
-                    </div>
+
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                handleStaffAddStudentToApp(selectedJob.id, std.student_id, std.student_name)
+                              }
+                            >
+                              + Add to Application
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* TAB 3: APPLICATIONS RECEIVED (STAFF & ADMIN ONLY) */}
-            {drawerActiveTab === 'applications' && activeRole !== 'STUDENT' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-xs">
-                  <p className="text-[#64748B]">
-                    Students who applied for {selectedJob.title}
-                  </p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={ExternalLink}
-                    onClick={() => navigate('/dashboard/applications')}
-                  >
-                    Open Console
-                  </Button>
-                </div>
-
-                <div className="divide-y divide-black/5 max-h-[460px] overflow-y-auto pr-1">
-                  {applications
-                    .filter((a) => (a.job_id || a.jobId) === selectedJob.id)
-                    .map((app) => {
-                      const sid = app.student_id || app.studentId;
-                      const studentObj =
-                        students.find((s) => s.id === sid) || app.student || {};
-
-                      return (
-                        <div
-                          key={app.id}
-                          className="py-3 flex items-center justify-between gap-3"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <Avatar
-                              src={studentObj.photo_url || studentObj.avatar}
-                              name={studentObj.name}
-                              size="xs"
-                            />
-                            <div className="min-w-0">
-                              <p className="font-bold text-xs text-[#0B0B0F] truncate">
-                                {studentObj.name}
-                              </p>
-                              <p className="text-[10px] text-[#64748B] truncate">
-                                {studentObj.roll_number} · {studentObj.department} · Applied: {app.applied_date}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 uppercase">
-                              {app.status.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                  {applications.filter((a) => (a.job_id || a.jobId) === selectedJob.id).length === 0 && (
-                    <div className="py-8 text-center text-xs text-slate-500">
-                      No student applications received yet for this recruitment drive.
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>
         )}
       </Modal>
 
-      {/* ============================================================ */}
-      {/* 6. CREATE / EDIT DRIVE MODAL (STAFF & ADMIN ONLY)            */}
-      {/* ============================================================ */}
+      {/* 5. CREATE / EDIT DRIVE MODAL */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => {
           setIsCreateModalOpen(false);
           setEditingJobId(null);
         }}
-        title={
-          editingJobId
-            ? 'Edit Campus Recruitment Drive'
-            : 'Launch New Campus Hiring Drive'
-        }
-        subtitle="Configure CTC parameters, cutoff thresholds, allowed departments, and skill benchmarks"
+        title={editingJobId ? 'Edit Campus Recruitment Drive' : 'Launch New Campus Hiring Drive'}
+        subtitle="Configure company, CTC parameters, cutoff thresholds, allowed departments, and skill benchmarks"
       >
-        <form onSubmit={handleSaveDriveForm} className="space-y-5">
+        <form onSubmit={handleSaveDriveForm} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#475569] mb-1.5">
+                Target Company *
+              </label>
+              <select
+                value={formCompanyId}
+                onChange={(e) => setFormCompanyId(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.tier})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <Input
               variant="pill"
-              label="Job Role / Title"
-              placeholder="e.g. Senior Frontend Engineer"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              required
-            />
-            <Input
-              variant="pill"
-              label="Company Name"
-              placeholder="e.g. TechNova Solutions"
-              value={newCompany}
-              onChange={(e) => setNewCompany(e.target.value)}
+              label="Job Role / Title *"
+              placeholder="e.g. Full Stack Software Engineer"
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
               required
             />
           </div>
 
-          {/* CTC Min & Max (LPA) */}
           <div className="grid grid-cols-2 gap-4">
             <Input
               variant="pill"
-              label="CTC Min (LPA)"
+              label="Package / CTC (LPA) *"
               type="number"
-              step="0.5"
-              value={newPackageMin}
-              onChange={(e) => setNewPackageMin(e.target.value)}
+              step="0.1"
+              value={formPackage}
+              onChange={(e) => setFormPackage(e.target.value)}
               required
             />
             <Input
               variant="pill"
-              label="CTC Max (LPA)"
+              label="Max CTC (LPA)"
               type="number"
-              step="0.5"
-              value={newPackageMax}
-              onChange={(e) => setNewPackageMax(e.target.value)}
-              required
+              step="0.1"
+              value={formPackageMax}
+              onChange={(e) => setFormPackageMax(e.target.value)}
             />
           </div>
 
-          {/* Drive Date & Deadline */}
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              variant="pill"
-              label="Drive Date"
-              type="date"
-              value={newDriveDate}
-              onChange={(e) => setNewDriveDate(e.target.value)}
-              required
-            />
-            <Input
-              variant="pill"
-              label="Application Deadline"
-              type="date"
-              value={newDeadline}
-              onChange={(e) => setNewDeadline(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Location, Min CGPA, Max Active Backlogs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Input
               variant="pill"
               label="Location"
-              value={newLocation}
-              onChange={(e) => setNewLocation(e.target.value)}
-              required
+              value={formLocation}
+              onChange={(e) => setFormLocation(e.target.value)}
             />
             <Input
               variant="pill"
-              label="Min CGPA"
+              label="Min CGPA (0 - 10) *"
               type="number"
               step="0.1"
-              value={newMinCgpa}
-              onChange={(e) => setNewMinCgpa(e.target.value)}
+              min="0"
+              max="10"
+              value={formMinCgpa}
+              onChange={(e) => setFormMinCgpa(e.target.value)}
               required
             />
             <Input
               variant="pill"
-              label="Max Active Backlogs"
+              label="Max Backlogs *"
               type="number"
               min="0"
-              value={newMaxBacklogs}
-              onChange={(e) => setNewMaxBacklogs(e.target.value)}
+              value={formMaxBacklogs}
+              onChange={(e) => setFormMaxBacklogs(e.target.value)}
               required
             />
           </div>
 
-          {/* Tier & Status */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-                Drive Tier
-              </label>
+              <label className="block text-xs font-semibold text-[#475569] mb-1.5">Job Type</label>
               <select
-                value={newTier}
-                onChange={(e) => setNewTier(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
+                value={formJobType}
+                onChange={(e) => setFormJobType(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-full text-xs font-semibold bg-white border border-black/10 outline-none"
               >
-                <option value="Core">Core (&lt;12 LPA)</option>
-                <option value="Dream">Dream (12–18 LPA)</option>
-                <option value="Super Dream">Super Dream (&gt;18 LPA)</option>
+                <option value="FULL_TIME">Full Time</option>
+                <option value="INTERNSHIP">Internship</option>
+                <option value="PPO">PPO</option>
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-                Drive Status
-              </label>
-              <select
-                value={newStatus}
-                onChange={(e) => setNewStatus(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
-              >
-                <option value="OPEN">Open (Accepting Applications)</option>
-                <option value="CLOSED">Closed</option>
-                <option value="ARCHIVED">Archived</option>
-              </select>
-            </div>
-          </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-              Role Description
-            </label>
-            <textarea
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              rows={2}
-              placeholder="Outline engineering scope, responsibilities, and interview process..."
-              className="w-full px-4 py-2.5 rounded-2xl text-xs bg-white border border-black/10 text-[#0B0B0F] outline-none focus:border-violet-500 transition-colors"
+            <Input
+              variant="pill"
+              label="Drive Date"
+              type="date"
+              value={formDriveDate}
+              onChange={(e) => setFormDriveDate(e.target.value)}
+            />
+
+            <Input
+              variant="pill"
+              label="Application Deadline"
+              type="date"
+              value={formDeadline}
+              onChange={(e) => setFormDeadline(e.target.value)}
             />
           </div>
 
-          {/* Allowed Branches (Multi-select) */}
+          <div>
+            <label className="block text-xs font-semibold text-[#475569] mb-1.5">Status</label>
+            <select
+              value={formStatus}
+              onChange={(e) => setFormStatus(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-full text-xs font-semibold bg-white border border-black/10 outline-none"
+            >
+              <option value="OPEN">OPEN (Accepting Applications)</option>
+              <option value="CLOSED">CLOSED</option>
+              <option value="ARCHIVED">ARCHIVED</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#475569] mb-1.5">Description</label>
+            <textarea
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+              rows={2}
+              placeholder="Outline engineering scope, requirements..."
+              className="w-full px-4 py-2.5 rounded-2xl text-xs bg-white border border-black/10 outline-none"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-[#475569] mb-1.5">
-              Allowed Branches (Multi-select)
+              Allowed Departments (Empty means all departments)
             </label>
             <div className="flex flex-wrap gap-2">
-              {ALL_BRANCHES.map((branch) => {
-                const selected = newAllowedBranches.includes(branch);
+              {departments.map((dept) => {
+                const selected = formDepartmentIds.includes(dept.id);
                 return (
                   <button
-                    key={branch}
+                    key={dept.id}
                     type="button"
-                    onClick={() => handleToggleBranch(branch)}
+                    onClick={() => handleToggleDepartment(dept.id)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                       selected
                         ? 'bg-[#0B0B0F] text-white border-[#0B0B0F]'
@@ -1963,30 +1437,29 @@ export default function JobsPage() {
                     }`}
                   >
                     {selected ? '✓ ' : '+ '}
-                    {branch}
+                    {dept.name}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Required Skills with Levels */}
           <div className="space-y-2">
             <label className="block text-xs font-semibold text-[#475569]">
-              Required Skills & Minimum Proficiency Levels
+              Required Skills & Minimum Levels
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {newRequiredSkills.map((sk) => (
+              {formSkills.map((sk) => (
                 <span
-                  key={sk.name}
+                  key={sk.skill_id}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 border border-violet-200 text-xs font-semibold text-violet-900"
                 >
                   <span>
-                    {sk.name} · <strong>{sk.level}</strong>
+                    {sk.skill_name} · <strong>{sk.required_level}</strong>
                   </span>
                   <button
                     type="button"
-                    onClick={() => handleRemoveSkillRule(sk.name)}
+                    onClick={() => handleRemoveSkillRule(sk.skill_id)}
                     className="text-violet-500 hover:text-rose-600"
                   >
                     <X className="w-3 h-3" />
@@ -1996,16 +1469,20 @@ export default function JobsPage() {
             </div>
 
             <div className="flex items-center gap-2 pt-1">
-              <input
-                type="text"
-                placeholder="Skill name (e.g. Python, Go)..."
-                value={skillInputName}
-                onChange={(e) => setSkillInputName(e.target.value)}
-                className="flex-1 px-3.5 py-2 rounded-full text-xs bg-white border border-black/10 outline-none"
-              />
               <select
-                value={skillInputLevel}
-                onChange={(e) => setSkillInputLevel(e.target.value)}
+                value={selectedSkillId}
+                onChange={(e) => setSelectedSkillId(e.target.value)}
+                className="flex-1 px-3.5 py-2 rounded-full text-xs bg-white border border-black/10 outline-none"
+              >
+                {availableSkills.map((sk) => (
+                  <option key={sk.id} value={sk.id}>
+                    {sk.name} ({sk.category})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedSkillLevel}
+                onChange={(e) => setSelectedSkillLevel(e.target.value)}
                 className="px-3 py-2 rounded-full text-xs font-semibold bg-white border border-black/10 outline-none"
               >
                 {SKILL_LEVELS.map((lvl) => (
@@ -2035,7 +1512,7 @@ export default function JobsPage() {
               Cancel
             </Button>
             <Button variant="primary" size="sm" type="submit">
-              {editingJobId ? 'Save Drive Changes' : 'Publish Drive'}
+              {editingJobId ? 'Save Changes' : 'Publish Drive'}
             </Button>
           </div>
         </form>

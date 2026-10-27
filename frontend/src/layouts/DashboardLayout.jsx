@@ -7,6 +7,7 @@ import {
   DEMO_ACCOUNTS_REGISTRY,
 } from '../context/AuthContext.jsx';
 import { mockApi } from '../services/mockApi.js';
+import notificationsService from '../services/notificationsService.js';
 import Avatar from '../components/ui/Avatar.jsx';
 import Input from '../components/ui/Input.jsx';
 import CRTWarp from '../components/ui/CRTWarp.jsx';
@@ -48,6 +49,7 @@ export default function DashboardLayout({ children }) {
     activeDemoRole,
     switchDemoAccount,
     logoutDemoSession,
+    switchRole,
   } = useAuth();
   const user = activeDemoUser;
   const activeRole = activeDemoRole;
@@ -287,43 +289,45 @@ export default function DashboardLayout({ children }) {
     };
   }, [globalSearchQuery, activeRole]);
 
-  // Load recipient-scoped notifications & listen for instant event updates
+  const seenNotificationIdsRef = useRef(new Set());
+  const isFirstNotifLoad = useRef(true);
+
+  // Load recipient-scoped notifications & listen for instant event updates with 30s polling
   useEffect(() => {
     let mounted = true;
-    async function fetchRoleNotifications(isPoll = false) {
-      if (!user?.id) return;
+    async function fetchRoleNotifications() {
+      if (!user) return;
       try {
-        const res = await mockApi.getNotifications({
-          poll: isPoll,
-          role: activeRole,
-          userId: user.id,
-        });
-        if (mounted && res?.notifications) {
-          setNotifications(res.notifications);
-          if (isPoll && res.latestPolled) {
-            const notif = res.latestPolled;
-            const toastFn = toast[notif.type] || toast.info;
-            toastFn(notif.title, notif.message, {
-              actionLabel: 'View',
-              onAction: () => navigate(notif.link || '/dashboard'),
-              duration: 4500,
-            });
-          }
+        const list = await notificationsService.getNotifications().catch(() => []);
+        if (!mounted) return;
+        const items = Array.isArray(list) ? list : [];
+        setNotifications(items);
+
+        // Swipe toast for newly arrived unread notifications
+        if (!isFirstNotifLoad.current) {
+          items.forEach((n) => {
+            if (!n.is_read && !seenNotificationIdsRef.current.has(n.id)) {
+              toast.info(n.title, n.message || '');
+            }
+          });
         }
+
+        items.forEach((n) => seenNotificationIdsRef.current.add(n.id));
+        isFirstNotifLoad.current = false;
       } catch (err) {
-        console.error(err);
+        // fail silently for background polling
       }
     }
 
-    fetchRoleNotifications(false);
+    fetchRoleNotifications();
 
     const handleNotificationsUpdated = () => {
-      fetchRoleNotifications(false);
+      fetchRoleNotifications();
     };
     window.addEventListener('placetrack-notifications-updated', handleNotificationsUpdated);
 
     const pollInterval = setInterval(() => {
-      fetchRoleNotifications(true);
+      fetchRoleNotifications();
     }, 30000);
 
     return () => {
@@ -331,7 +335,7 @@ export default function DashboardLayout({ children }) {
       window.removeEventListener('placetrack-notifications-updated', handleNotificationsUpdated);
       clearInterval(pollInterval);
     };
-  }, [activeRole, user?.id, navigate, toast]);
+  }, [activeRole, user, toast]);
 
   // Refresh notifications when opening bell dropdown
   const handleToggleNotificationMenu = async () => {
@@ -341,14 +345,10 @@ export default function DashboardLayout({ children }) {
     }
     setShowNotificationMenu(nextState);
     setShowRoleMenu(false);
-    if (nextState && user?.id) {
+    if (nextState && user) {
       try {
-        const res = await mockApi.getNotifications({
-          poll: false,
-          role: activeRole,
-          userId: user.id,
-        });
-        if (res?.notifications) setNotifications(res.notifications);
+        const res = await notificationsService.getNotifications().catch(() => []);
+        if (Array.isArray(res)) setNotifications(res);
       } catch (err) {
         console.error(err);
       }
@@ -403,7 +403,7 @@ export default function DashboardLayout({ children }) {
       ? staffNav
       : studentNav;
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read && !n.is_read).length;
 
   // Single authoritative account switch handler
   const handleSwitchDemoAccount = (targetAccountId) => {
@@ -659,34 +659,28 @@ export default function DashboardLayout({ children }) {
 
             {/* Right actions: Demo Account Quick Switcher + Demo Inbox + Bell notification + User Profile Dropdown */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 flex-shrink-0">
-              {/* Quick Demo Account Switcher Pill */}
-              {IS_DEMO_ENVIRONMENT && (
+              {/* Quick Role Switcher / ADMIN Preview As */}
+              {user?.role === 'ADMIN' && (
                 <div className="hidden xl:flex items-center gap-1.5 bg-white/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-violet-200/80 shadow-2xs">
                   <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider text-violet-700 px-2 py-0.5 rounded-full bg-violet-100/80">
                     <Sparkles className="w-3 h-3" />
-                    Role Switcher
+                    Preview as
                   </span>
-                  {DEMO_ACCOUNTS_REGISTRY.map((acc) => {
-                    const isSelected = user?.id === acc.id || activeRole === acc.role;
+                  {['ADMIN', 'STAFF', 'STUDENT'].map((roleKey) => {
+                    const isSelected = activeRole === roleKey;
                     return (
                       <button
-                        key={acc.id}
+                        key={roleKey}
                         type="button"
-                        onClick={() => handleSwitchDemoAccount(acc.id)}
+                        onClick={() => switchRole && switchRole(roleKey)}
                         className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5 ${
                           isSelected
                             ? 'bg-[#0B0B0F] text-white shadow-xs'
                             : 'text-[#475569] hover:text-[#0B0B0F] hover:bg-black/5'
                         }`}
-                        title={`Switch active session to ${acc.name} (${acc.role})`}
+                        title={`Preview UI layout as ${roleKey}`}
                       >
-                        <span>
-                          {acc.role === 'ADMIN'
-                            ? 'Admin'
-                            : acc.role === 'STAFF'
-                            ? 'Staff'
-                            : 'Student'}
-                        </span>
+                        <span>{roleKey === 'ADMIN' ? 'Admin' : roleKey === 'STAFF' ? 'Staff' : 'Student'}</span>
                         {isSelected && (
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                         )}
@@ -914,14 +908,13 @@ export default function DashboardLayout({ children }) {
                           <button
                             type="button"
                             onClick={async () => {
-                              const updated = await mockApi.markNotificationsRead({
-                                role: activeRole,
-                                userId: user?.id,
-                              });
-                              setNotifications(updated);
+                              await notificationsService.markAllRead().catch(() => {});
+                              setNotifications((prev) =>
+                                prev.map((n) => ({ ...n, read: true, is_read: true }))
+                              );
                               toast.success(
                                 'All notifications marked read',
-                                `Cleared unread inbox for ${user?.name}.`
+                                `Cleared unread notifications.`
                               );
                             }}
                             className="text-violet-600 font-semibold hover:underline"

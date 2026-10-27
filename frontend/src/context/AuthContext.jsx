@@ -179,11 +179,20 @@ export function AuthProvider({ children }) {
     setTimeout(() => setNotification(null), 3500);
   }, []);
 
+  const [previewRole, setPreviewRole] = useState(null);
+
   // ── Derived values ───────────────────────────────────────────────────────
-  const activeDemoRole = currentUser?.role || null;
+  const realRole = currentUser?.role || null;
+  const activeDemoRole = (realRole === 'ADMIN' && previewRole) ? previewRole : realRole;
   const isDemoSession = Boolean(currentUser);
   const currentPermissions =
     ROLE_PERMISSIONS[activeDemoRole] || ROLE_PERMISSIONS.STUDENT;
+
+  const switchRole = useCallback((newRole) => {
+    if (currentUser?.role === 'ADMIN') {
+      setPreviewRole(newRole === 'ADMIN' ? null : newRole);
+    }
+  }, [currentUser?.role]);
 
   const value = useMemo(
     () => ({
@@ -195,8 +204,11 @@ export function AuthProvider({ children }) {
       user: currentUser,
       authUser: currentUser,
       activeRole: activeDemoRole,
-      accountRole: activeDemoRole,
+      accountRole: realRole,
       permissions: currentPermissions,
+      previewRole,
+      switchRole,
+      setPreviewRole,
 
       // Auth actions
       login,
@@ -208,21 +220,22 @@ export function AuthProvider({ children }) {
 
       // Compat stubs (prototype pages call these, keep them safe)
       IS_DEMO_ENVIRONMENT: false,
-      isPreviewMode: false,
-      previewRole: null,
+      isPreviewMode: Boolean(previewRole),
       demoAccountsRegistry: [],
       studentsList: [],
-      selectedStudentId: currentUser?.id || null,
+      selectedStudentId: currentUser?.student_id || currentUser?.id || null,
       switchDemoAccount: () => null,
-      switchRole: () => null,
       loginWithDemoAccount: () => null,
       refreshStudentsCache: async () => {},
     }),
     [
       currentUser,
       activeDemoRole,
+      realRole,
       isDemoSession,
       currentPermissions,
+      previewRole,
+      switchRole,
       login,
       logout,
       setUser,

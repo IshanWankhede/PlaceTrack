@@ -3,8 +3,9 @@ import GlassCard from '../../components/ui/GlassCard.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Input from '../../components/ui/Input.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import companiesService from '../../services/companiesService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useToast } from '../../context/ToastContext.jsx';
 import {
   Star,
   Users,
@@ -15,473 +16,375 @@ import {
   Trash2,
   Building2,
   Edit3,
+  ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import { ContactActionButtons } from '../../components/ui/ContactActionButtons.jsx';
 
 export default function CompaniesPage() {
-  const { activeRole, showToast } = useAuth();
+  const { activeRole } = useAuth();
+  const toast = useToast();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [tierFilter, setTierFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Admin Company Form State (Requirement 5)
+  // Form State
   const [name, setName] = useState('');
-  const [tagline, setTagline] = useState('');
-  const [sector, setSector] = useState('Enterprise Software');
-  const [tier, setTier] = useState('Dream'); // 'Core' | 'Dream' | 'Super Dream'
+  const [industry, setIndustry] = useState('IT Services');
+  const [location, setLocation] = useState('Pune');
+  const [website, setWebsite] = useState('https://company.example.com');
+  const [description, setDescription] = useState('');
+  const [tier, setTier] = useState('CORE'); // 'CORE' | 'DREAM' | 'SUPER_DREAM'
   const [logoUrl, setLogoUrl] = useState('');
-  const [avgLpa, setAvgLpa] = useState('16.0');
-  const [highestLpa, setHighestLpa] = useState('22.0');
-  const [hrContacts, setHrContacts] = useState([
-    { name: 'Ananya Deshmukh', email: 'hr@company.com', phone: '+91 98201 12345' },
-  ]);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const loadCompanies = async () => {
+    setLoading(true);
+    try {
+      const params = {};
+      if (tierFilter !== 'ALL') params.tier = tierFilter;
+      if (searchQuery.trim()) params.q = searchQuery.trim();
+
+      const res = await companiesService.getCompanies(params);
+      const items = res.items || (Array.isArray(res) ? res : []);
+      setCompanies(items);
+    } catch (err) {
+      console.error('Failed to load companies:', err);
+      toast.error('Failed to load companies', err.response?.data?.detail || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        const data = await mockApi.getCompanies();
-        setCompanies(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  const handleAddHrContact = () => {
-    setHrContacts((prev) => [...prev, { name: '', email: '', phone: '' }]);
-  };
-
-  const handleUpdateHrContact = (index, field, value) => {
-    setHrContacts((prev) =>
-      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c))
-    );
-  };
-
-  const handleRemoveHrContact = (index) => {
-    setHrContacts((prev) => prev.filter((_, i) => i !== index));
-  };
+    loadCompanies();
+  }, [tierFilter, searchQuery]);
 
   const openCreateCompanyModal = () => {
     setEditingCompany(null);
     setName('');
-    setTagline('');
-    setSector('Enterprise Software');
-    setTier('Dream');
+    setIndustry('IT Services');
+    setLocation('Pune');
+    setWebsite('https://company.example.com');
+    setDescription('Campus Recruitment Partner');
+    setTier('CORE');
     setLogoUrl('');
-    setAvgLpa('16.0');
-    setHighestLpa('22.0');
-    setHrContacts([
-      { name: 'Ananya Deshmukh', email: 'hr@company.com', phone: '+91 98201 12345' },
-    ]);
+    setFormError('');
     setIsModalOpen(true);
   };
 
   const openEditCompanyModal = (company) => {
     setEditingCompany(company);
     setName(company.name || '');
-    setTagline(company.tagline || '');
-    setSector(company.sector || 'Enterprise Software');
-    setTier(company.tier || 'Dream');
+    setIndustry(company.industry || 'IT Services');
+    setLocation(company.location || '');
+    setWebsite(company.website || '');
+    setDescription(company.description || '');
+    setTier(company.tier || 'CORE');
     setLogoUrl(company.logo_url || '');
-    setAvgLpa(String(company.avg_package_lpa ?? company.avgPackageLPA ?? 15.0));
-    setHighestLpa(String(company.highest_package_lpa ?? company.highestPackageLPA ?? 20.0));
-    setHrContacts(
-      Array.isArray(company.hr_contacts) && company.hr_contacts.length > 0
-        ? company.hr_contacts.map((c) => ({ ...c }))
-        : [{ name: '', email: '', phone: '' }]
-    );
+    setFormError('');
     setIsModalOpen(true);
   };
 
-  const handleCreateCompany = async (e) => {
+  const handleSaveCompany = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    const validContacts = hrContacts.filter(
-      (c) => c.name.trim() || c.email.trim() || c.phone.trim()
-    );
-    if (editingCompany) {
-      const updated = await mockApi.updateCompany(editingCompany.id, {
-        name: name.trim(),
-        tagline: tagline.trim() || 'Campus Recruitment Partner',
-        sector,
-        tier,
-        logo_url: logoUrl.trim(),
-        hr_contacts: validContacts,
-        avg_package_lpa: parseFloat(avgLpa) || 14.0,
-        highest_package_lpa: parseFloat(highestLpa) || 18.0,
-      });
-      setCompanies((prev) =>
-        prev.map((c) => (c.id === editingCompany.id ? updated : c))
-      );
-      setIsModalOpen(false);
-      setEditingCompany(null);
-      showToast(`Updated partner company: ${updated.name}`);
+    if (!name.trim()) {
+      setFormError('Company name is required');
       return;
     }
+    setFormSubmitting(true);
+    setFormError('');
+    try {
+      const payload = {
+        name: name.trim(),
+        industry: industry.trim() || null,
+        location: location.trim() || null,
+        website: website.trim() || null,
+        description: description.trim() || null,
+        tier: tier.toUpperCase(),
+        logo_url: logoUrl.trim() || null,
+      };
 
-    const created = await mockApi.createCompany({
-      name: name.trim(),
-      tagline: tagline.trim() || 'Campus Recruitment Partner',
-      sector,
-      tier,
-      logo_url: logoUrl.trim(),
-      hr_contacts: validContacts,
-      avg_package_lpa: parseFloat(avgLpa) || 14.0,
-      highest_package_lpa: parseFloat(highestLpa) || 18.0,
-    });
-    setCompanies([created, ...companies]);
-    setIsModalOpen(false);
-    setName('');
-    setTagline('');
-    setLogoUrl('');
-    setHrContacts([{ name: '', email: '', phone: '' }]);
-    showToast(`Onboarded ${created.name} (${created.tier} Tier)`);
+      if (editingCompany) {
+        await companiesService.updateCompany(editingCompany.id, payload);
+        toast.success('Company Updated', `${payload.name} (${payload.tier})`);
+      } else {
+        await companiesService.createCompany(payload);
+        toast.success('Company Created', `${payload.name} added to recruiting partners`);
+      }
+      setIsModalOpen(false);
+      loadCompanies();
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Operation failed';
+      setFormError(msg);
+      toast.error('Save Failed', msg);
+    } finally {
+      setFormSubmitting(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="h-96 flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-violet-600 border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  const handleDeleteCompany = async (companyId, companyName, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Delete partner company "${companyName}"?`)) return;
+    try {
+      await companiesService.deleteCompany(companyId);
+      toast.success('Company Deleted', `${companyName} removed`);
+      loadCompanies();
+    } catch (err) {
+      // 409 Conflict if active jobs/placements exist
+      const msg =
+        err.response?.data?.detail ||
+        err.message ||
+        'Cannot delete company with active recruitment drives or placement history.';
+      toast.error('Deletion Conflict', msg);
+    }
+  };
+
+  const filteredCompanies = companies.filter((c) => {
+    if (tierFilter !== 'ALL' && c.tier !== tierFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = (c.name || '').toLowerCase().includes(q);
+      const matchInd = (c.industry || '').toLowerCase().includes(q);
+      const matchLoc = (c.location || '').toLowerCase().includes(q);
+      if (!matchName && !matchInd && !matchLoc) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="font-display font-bold text-2xl text-[#0B0B0F]">
+          <h2 className="font-display font-extrabold text-2xl text-[#0B0B0F] tracking-tight">
             Corporate Hiring Partners
           </h2>
-          <p className="text-xs text-[#64748B]">
-            Verified recruiting corporations, tier classification, HR contacts, and salary benchmarks
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Verified corporate recruiters, tier classifications, and campus recruitment drives ({filteredCompanies.length} partners).
           </p>
         </div>
 
         {(activeRole === 'ADMIN' || activeRole === 'STAFF') && (
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Plus}
-            onClick={openCreateCompanyModal}
-          >
+          <Button variant="primary" size="sm" icon={Plus} onClick={openCreateCompanyModal}>
             Add Partner Company
           </Button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {companies.map((company) => (
-          <GlassCard
-            key={company.id}
-            variant="white"
-            hoverEffect={true}
-            className="p-6 flex flex-col justify-between"
+      {/* Filter and Search Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-black/5 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <select
+            value={tierFilter}
+            onChange={(e) => setTierFilter(e.target.value)}
+            className="text-xs font-semibold bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] focus:outline-none"
           >
-            <div>
-              <div className="flex items-start justify-between mb-4">
-                {company.logo_url ? (
-                  <img
-                    src={company.logo_url}
-                    alt={company.name}
-                    className="w-12 h-12 rounded-2xl object-cover border border-black/10 shadow-xs"
-                  />
-                ) : (
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center font-display font-black text-sm shadow-xs"
-                    style={{
-                      backgroundColor: company.accent_bg || company.accentBg || '#EDE9FE',
-                      color: company.accent_color || company.accentColor || '#6D28D9',
-                    }}
-                  >
-                    {company.logo_letter || company.logoLetter}
-                  </div>
-                )}
+            <option value="ALL">All Placement Tiers</option>
+            <option value="CORE">CORE Tier</option>
+            <option value="DREAM">DREAM Tier</option>
+            <option value="SUPER_DREAM">SUPER_DREAM Tier</option>
+          </select>
+        </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                      company.tier === 'Super Dream'
-                        ? 'bg-amber-100 text-amber-800'
-                        : company.tier === 'Dream'
-                        ? 'bg-violet-100 text-violet-700'
-                        : 'bg-blue-100 text-blue-700'
-                    }`}
-                  >
-                    {company.tier || 'Dream'}
-                  </span>
-                  <div className="flex items-center gap-1 text-xs font-bold text-amber-500 bg-amber-50 px-2.5 py-1 rounded-full">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span>{company.rating}</span>
-                  </div>
-                </div>
-              </div>
-
-              <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                {company.name}
-              </h3>
-              <p className="text-xs text-[#64748B] mb-2">{company.tagline}</p>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full">
-                {company.sector}
-              </span>
-
-              {/* Package stats grid */}
-              <div className="grid grid-cols-2 gap-3 mt-5 p-3 rounded-2xl bg-[#F9F9FB] border border-black/5 text-xs">
-                <div>
-                  <span className="text-[10px] text-[#64748B] font-semibold block uppercase">
-                    Average CTC
-                  </span>
-                  <span className="font-display font-bold text-sm text-[#0B0B0F]">
-                    {company.avg_package_lpa ?? company.avgPackageLPA} LPA
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#64748B] font-semibold block uppercase">
-                    Highest Package
-                  </span>
-                  <span className="font-display font-bold text-sm text-emerald-600">
-                    {company.highest_package_lpa ?? company.highestPackageLPA} LPA
-                  </span>
-                </div>
-              </div>
-
-              {/* HR Contacts List (Requirement 5) */}
-              {company.hr_contacts && company.hr_contacts.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-black/5 space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] block">
-                    HR Points of Contact ({company.hr_contacts.length})
-                  </span>
-                  <div className="space-y-2">
-                    {company.hr_contacts.map((hr, i) => (
-                      <div
-                        key={i}
-                        className="p-2.5 rounded-xl bg-slate-50 border border-black/5 text-[11px] flex flex-col gap-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-[#0B0B0F] flex items-center gap-1.5">
-                            <User className="w-3 h-3 text-violet-600" />
-                            {hr.name}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-[#64748B] text-[10px]">
-                          <span className="flex items-center gap-1">
-                            <Mail className="w-2.5 h-2.5" />
-                            {hr.email}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-2.5 h-2.5" />
-                            {hr.phone || 'Phone not provided'}
-                          </span>
-                        </div>
-                        <div className="pt-1">
-                          <ContactActionButtons
-                            compact
-                            target={{
-                              id: `hr-${String(hr.email || hr.name)
-                                .toLowerCase()
-                                .replace(/[^a-z0-9]+/g, '-')}`,
-                              name: `${hr.name} (${company.name} HR)`,
-                              role: 'HR_CONTACT',
-                              phone: hr.phone || '',
-                              email: hr.email || '',
-                              subtitle: `${hr.email} · ${company.name}`,
-                            }}
-                            subject={`Campus Recruitment Coordination — ${company.name}`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-1.5 text-[#64748B]">
-                <Users className="w-3.5 h-3.5" />
-                <span>{company.total_hired ?? company.totalHired} students hired</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {(activeRole === 'ADMIN' || activeRole === 'STAFF') && (
-                  <button
-                    type="button"
-                    onClick={() => openEditCompanyModal(company)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#0B0B0F] transition-colors cursor-pointer"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    Edit
-                  </button>
-                )}
-                <span className="font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-                  {company.active_drives ?? company.activeDrives} Live Drive
-                  {(company.active_drives ?? company.activeDrives) > 1 ? 's' : ''}
-                </span>
-              </div>
-            </div>
-          </GlassCard>
-        ))}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search company, industry, city..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="text-xs bg-[#F6F6F8] border border-black/10 rounded-full px-3 py-1.5 text-[#0B0B0F] w-48 sm:w-64 focus:outline-none focus:border-[#0B0B0F]"
+          />
+        </div>
       </div>
 
-      {/* ADMIN COMPANY FORM MODAL (Requirement 5) */}
+      {/* Loading Skeleton */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-64 rounded-3xl bg-slate-100 animate-pulse border border-black/5" />
+          ))}
+        </div>
+      ) : filteredCompanies.length === 0 ? (
+        <div className="py-16 text-center text-xs text-slate-400 bg-white rounded-3xl border border-black/5">
+          <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p>No companies found matching the active criteria.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredCompanies.map((company) => {
+            const tierStr = company.tier || 'CORE';
+            const tierBadgeClass =
+              tierStr === 'SUPER_DREAM'
+                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                : tierStr === 'DREAM'
+                ? 'bg-violet-100 text-violet-700 border-violet-200'
+                : 'bg-blue-100 text-blue-700 border-blue-200';
+
+            return (
+              <GlassCard key={company.id} className="p-6 relative flex flex-col justify-between group">
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-black/10 flex items-center justify-center font-display font-extrabold text-base shadow-xs text-violet-600">
+                      {company.name?.charAt(0) || 'C'}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${tierBadgeClass}`}>
+                        {tierStr.replace('_', ' ')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <h3 className="font-display font-bold text-lg text-[#0B0B0F] group-hover:text-violet-600 transition-colors">
+                    {company.name}
+                  </h3>
+                  <p className="text-xs text-[#64748B] mb-2 line-clamp-2">
+                    {company.description || company.industry || 'Recruiting Partner'}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] mt-3">
+                    {company.industry && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full">
+                        {company.industry}
+                      </span>
+                    )}
+                    {company.location && (
+                      <span className="flex items-center gap-1 text-[#64748B]">
+                        <MapPin className="w-3 h-3" />
+                        {company.location}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4 mt-5 border-t border-black/5 flex items-center justify-between gap-2 text-xs">
+                  {company.website ? (
+                    <a
+                      href={company.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-violet-600 hover:underline flex items-center gap-1 text-xs font-semibold"
+                    >
+                      Website
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="text-slate-400 text-xs">No website</span>
+                  )}
+
+                  {(activeRole === 'ADMIN' || activeRole === 'STAFF') && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEditCompanyModal(company)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-[#0B0B0F] transition-colors"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        Edit
+                      </button>
+                      {activeRole === 'ADMIN' && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCompany(company.id, company.name, e)}
+                          className="p-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                          title="Delete company"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
+
+      {/* CREATE / EDIT COMPANY MODAL */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Onboard Corporate Hiring Partner"
-        subtitle="Configure company tier, logo asset, and HR contact directory"
+        title={editingCompany ? 'Edit Partner Company' : 'Onboard Partner Company'}
+        maxWidth="max-w-md"
       >
-        <form onSubmit={handleCreateCompany} className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              variant="pill"
-              label="Company Name"
-              placeholder="e.g. Atlassian India"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+        <form onSubmit={handleSaveCompany} className="space-y-4 pt-2">
+          <Input
+            label="Company Name"
+            placeholder="TechNova Solutions"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#475569] mb-1.5">
+              <label className="block text-xs font-semibold text-[#0B0B0F] mb-1.5">
                 Placement Tier
               </label>
               <select
                 value={tier}
                 onChange={(e) => setTier(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full text-xs font-bold bg-white border border-black/10 text-[#0B0B0F] outline-none"
+                className="w-full bg-white border border-black/10 rounded-xl px-3 py-2 text-xs font-semibold text-[#0B0B0F] focus:outline-none"
               >
-                <option value="Core">Core Tier</option>
-                <option value="Dream">Dream Tier</option>
-                <option value="Super Dream">Super Dream Tier</option>
+                <option value="CORE">CORE Tier</option>
+                <option value="DREAM">DREAM Tier</option>
+                <option value="SUPER_DREAM">SUPER_DREAM Tier</option>
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
-              variant="pill"
-              label="Logo URL (Optional)"
-              placeholder="https://logo.clearbit.com/atlassian.com"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-            />
-            <Input
-              variant="pill"
-              label="Industry Sector"
-              placeholder="e.g. Cloud & DevOps"
-              value={sector}
-              onChange={(e) => setSector(e.target.value)}
+              label="Industry / Domain"
+              placeholder="IT Services"
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
             />
           </div>
 
-          <Input
-            variant="pill"
-            label="Company Tagline"
-            placeholder="e.g. Distributed Collaboration & Cloud Systems"
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-          />
-
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <Input
-              variant="pill"
-              label="Average CTC (LPA)"
-              type="number"
-              step="0.5"
-              value={avgLpa}
-              onChange={(e) => setAvgLpa(e.target.value)}
+              label="Location / HQ"
+              placeholder="Pune, India"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
             />
             <Input
-              variant="pill"
-              label="Highest CTC (LPA)"
-              type="number"
-              step="0.5"
-              value={highestLpa}
-              onChange={(e) => setHighestLpa(e.target.value)}
+              label="Website URL"
+              placeholder="https://company.example.com"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
             />
           </div>
 
-          {/* Dynamic List of HR Contacts */}
-          <div className="space-y-3 pt-2 border-t border-black/5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[#0B0B0F] uppercase tracking-wider">
-                HR Contacts (Name, Email, Phone)
-              </label>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon={Plus}
-                onClick={handleAddHrContact}
-              >
-                Add HR Contact
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {hrContacts.map((contact, idx) => (
-                <div
-                  key={idx}
-                  className="p-3.5 rounded-2xl bg-[#F9F9FB] border border-black/5 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-violet-700">
-                      HR Contact #{idx + 1}
-                    </span>
-                    {hrContacts.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveHrContact(idx)}
-                        className="text-slate-400 hover:text-rose-600"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      placeholder="HR Full Name"
-                      value={contact.name}
-                      onChange={(e) => handleUpdateHrContact(idx, 'name', e.target.value)}
-                      className="px-3 py-2 rounded-xl text-xs bg-white border border-black/10 outline-none"
-                      required
-                    />
-                    <input
-                      type="email"
-                      placeholder="hr@company.com"
-                      value={contact.email}
-                      onChange={(e) => handleUpdateHrContact(idx, 'email', e.target.value)}
-                      className="px-3 py-2 rounded-xl text-xs bg-white border border-black/10 outline-none"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="+91 98201 00000"
-                      value={contact.phone}
-                      onChange={(e) => handleUpdateHrContact(idx, 'phone', e.target.value)}
-                      className="px-3 py-2 rounded-xl text-xs bg-white border border-black/10 outline-none"
-                      required
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#0B0B0F] mb-1.5">
+              Description / Overview
+            </label>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Overview of hiring needs, technical stack and profile..."
+              className="w-full bg-white border border-black/10 rounded-xl p-3 text-xs text-[#0B0B0F] focus:outline-none"
+            />
           </div>
 
-          <div className="pt-4 flex items-center justify-end gap-3 border-t border-black/5">
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-            >
+          {formError && (
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
+              {formError}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" size="md" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" type="submit">
-              Save Partner Company
+            <Button variant="primary" size="md" type="submit" loading={formSubmitting}>
+              {editingCompany ? 'Save Changes' : 'Onboard Company'}
             </Button>
           </div>
         </form>
