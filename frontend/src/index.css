@@ -1,0 +1,5 @@
+:root { font-family: system-ui, sans-serif; }
+body { margin: 0; background: #0f172a; color: #e2e8f0; }
+.card { max-width: 520px; margin: 12vh auto; padding: 28px; border-radius: 14px; background: #1e293b; }
+.ok { color: #4ade80; }
+.bad { color: #f87171; }
