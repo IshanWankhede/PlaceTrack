@@ -23,12 +23,23 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+/**
+ * PackageHistogram
+ *
+ * Accepts data from EITHER the mockApi shape (key: "range") or the real API
+ * shape (key: "tier_range"). Normalises into "label" so a single dataKey works.
+ */
 export default function PackageHistogram({ data = [] }) {
+  const normalised = data.map((d) => ({
+    ...d,
+    label: d.tier_range ?? d.range ?? '',
+  }));
+
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
-          data={data}
+          data={normalised}
           layout="vertical"
           margin={{ top: 10, right: 20, left: 20, bottom: 0 }}
         >
@@ -38,12 +49,14 @@ export default function PackageHistogram({ data = [] }) {
             axisLine={false}
             tickLine={false}
             tick={{ fill: '#94A3B8', fontSize: 11, fontWeight: 500 }}
+            allowDecimals={false}
           />
           <YAxis
-            dataKey="range"
+            dataKey="label"
             type="category"
             axisLine={false}
             tickLine={false}
+            width={76}
             tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
