@@ -10,6 +10,9 @@ PROMPTS.md
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage*
+coverage/
+htmlcov/
 .venv/
 venv/
 .mypy_cache/

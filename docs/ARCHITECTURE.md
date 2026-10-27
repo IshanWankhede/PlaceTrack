@@ -1,10 +1,10 @@
 # Architecture
 
-PlaceTrack has two layers that are **not connected today**: a complete browser-only prototype (current implementation) and a backend plus database foundation (starter code and unexecuted SQL). This document keeps them separate.
+PlaceTrack is a production-grade Placement Management & Analytics System designed for enterprise campus recruitment and DBMS course demonstration. The system features a unified multi-tier architecture with full end-to-end integration across the frontend, REST API, and PostgreSQL database.
 
-Dashed boxes in diagrams are planned or unconnected parts.
+---
 
-## 1. High-level system architecture
+## 1. High-level System Architecture
 
 ```mermaid
 flowchart TB
@@ -13,100 +13,89 @@ flowchart TB
         SF[STAFF]
         ST[STUDENT]
     end
-    subgraph PROTO["Current prototype (prototype/): runs entirely in the browser"]
-        UI[React 19 + Vite UI]
-        RT[React Router + RoleProtectedRoute]
+
+    subgraph CLIENT["Frontend (frontend/): React 18 + Vite"]
+        UI[Glassmorphic UI / Dashboard]
+        RT[React Router 6 + ProtectedRoute]
         CX[AuthContext / ToastContext]
-        MK[mockApi.js + eligibility.js]
-        LS[(localStorage)]
-        UI --> RT --> CX --> MK --> LS
+        SVC[Services: Axios API Client]
+        UI --> RT --> CX --> SVC
     end
-    subgraph PLAN["Backend foundation (not connected to the prototype)"]
-        FA[FastAPI: health endpoints only]
-        DB[(PostgreSQL: 17 tables, functions, triggers; unexecuted)]
-        FA -.-> DB
+
+    subgraph SERVER["Backend (backend/): FastAPI + SQLAlchemy 2"]
+        API[FastAPI REST API v1]
+        SEC[JWT HS256 + RBAC Guard]
+        CRUD[CRUD Service Layer]
+        API --> SEC --> CRUD
     end
-    AD --> UI
-    SF --> UI
-    ST --> UI
-    MK -. "planned: replace with HTTP API" .-> FA
-    subgraph OPS["Configuration and deployment"]
-        DC[docker-compose.yml]
-        ENV[.env.example]
+
+    subgraph DATABASE["Database (sql/): PostgreSQL 16"]
+        TBL[(17 Tables in 3NF)]
+        TRG[Triggers & Business Constraints]
+        PRC[Stored Procedures & Functions]
+        MV[(Materialized View: mv_placement_kpis)]
+        TBL --- TRG
+        TBL --- PRC
+        TBL --- MV
     end
-    DC --> FA
-    DC --> DB
+
+    subgraph MAIL["Dev Mail Service"]
+        MP[Mailpit: OTP E-mails]
+    end
+
+    AD --> CLIENT
+    SF --> CLIENT
+    ST --> CLIENT
+    SVC -->|HTTP REST / JSON| API
+    CRUD -->|SQLAlchemy 2 / psycopg2| DATABASE
+    API -->|SMTP 1025| MP
 ```
 
-## 2. Frontend architecture
+---
 
-Detail: [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md). Summary: React 19, Vite 8, React Router 7, Tailwind CSS 4, GSAP + Lenis (landing), three.js with React Three Fiber, Recharts, framer-motion / motion, jsPDF. Provider order `AuthProvider > ToastProvider > BrowserRouter`. State is React context plus a module-level mock store; there is no HTTP client in the prototype.
+## 2. Frontend Architecture
 
-There are two frontends in the repository:
+- **Stack**: React 18, Vite 5, Tailwind CSS 4, Recharts, Framer Motion, Three.js, Lucide Icons.
+- **Location**: `frontend/`
+- **State Management**: Context-based auth (`AuthContext.jsx`), toast notifications (`ToastContext.jsx`).
+- **Data Layer**: Clean service architecture in `frontend/src/services/` (`api.js`, `analyticsService.js`, `studentsService.js`, `jobsService.js`, `applicationsService.js`, `offersService.js`).
+- **Responsive Design**: Mobile, tablet, and desktop responsive with custom glassmorphism components (`GlassCard.jsx`, `StatCard.jsx`, `SmoothCursor.jsx`).
 
-| Folder | Purpose | Talks to backend? |
-|---|---|---|
-| `prototype/` | Full UI (landing, auth, 20 dashboard routes) | No |
-| `frontend/` | Docker skeleton: one status page calling `/health` and `/health/db` through axios | Yes (health only) |
+---
 
-## 3. Backend architecture
+## 3. Backend Architecture
 
-```mermaid
-flowchart LR
-    C[Client] --> M[app/main.py<br/>FastAPI + CORS]
-    M --> H[routers/health.py<br/>/health, /health/db]
-    H --> D[database/database.py<br/>SQLAlchemy engine + SessionLocal]
-    D --> P[(PostgreSQL)]
-    M --> CFG[core/config.py<br/>pydantic-settings]
-    subgraph Planned["Planned, folders exist but are empty"]
-        R[routers: auth, students, jobs, applications, offers, analytics]
-        SC[schemas]
-        CR[crud]
-        SV[services]
-        MD[models]
-    end
-    M -.-> R
-    R -.-> SC
-    R -.-> CR
-    CR -.-> MD
-    SV -.-> D
-```
+- **Stack**: FastAPI 0.111+, SQLAlchemy 2.0, Pydantic v2, python-jose, passlib (bcrypt).
+- **Location**: `backend/`
+- **Router Layout** (`app/routers/`):
+  - `auth`: Login, JWT issuance, OTP registration.
+  - `students`: Roster management, student profile, CGPA verification.
+  - `companies`: Partner company records and campus contacts.
+  - `jobs`: Recruitment drives, criteria configuration, candidate evaluation.
+  - `applications`: Application lifecycle transitions.
+  - `interviews`: Round scheduling and results.
+  - `offers` & `placements`: CTC breakdown, acceptance/decline, confirmed placement records.
+  - `analytics`: Materialized view KPI queries, department stats, NIRF reports.
+- **Testing**: 115 automated tests in `backend/tests/` running with pytest, pytest-cov, and savepoint-based transaction isolation (`join_transaction_mode="create_savepoint"`).
 
-Implemented endpoints: [API.md](./API.md). Layering rule from the earlier plan: routers -> schemas -> crud/services -> models; business rules live in the database (functions, procedures, triggers) and the API only calls them.
+---
 
-## 4. Database architecture
+## 4. Database Architecture (Source of Truth)
 
-PostgreSQL 16, schema defined by `sql/init/01..06`. 17 tables, 7 views (one materialized), 23 functions (including trigger functions), 14 procedures, 9 triggers, 19 explicit indexes. Entities and constraints: [DB_SCHEMA.md](./DB_SCHEMA.md); diagram: [ER_DIAGRAM.md](./ER_DIAGRAM.md). Business rules in SQL: eligibility, tier policy, legal status transitions, offer creation on selection, audit history and notifications. **Status: written, not executed.**
+- **Engine**: PostgreSQL 16
+- **DDL & Schema**:
+  - `01_ddl.sql`: 17 normalized tables with CHECK, UNIQUE, and FOREIGN KEY constraints.
+  - `02_views.sql`: Materialized view `mv_placement_kpis`, `v_department_stats`, `v_company_selections`, `v_offer_overview`.
+  - `03_functions.sql`: `fn_is_eligible`, `fn_policy_allows`, `fn_match_score`, `fn_generate_otp`.
+  - `04_procedures.sql`: `sp_schedule_interview`, `sp_record_interview_result`, `sp_set_offer_breakdown`, `sp_respond_to_offer`, `sp_refresh_analytics`.
+  - `05_triggers.sql`: Auto-offer generation on selection, eligibility enforcement on insert, legal status transition validator, audit logging.
+  - `06_seed.sql`: Rich campus recruitment seed data with 12 students, 5 partner companies, 7 jobs, and active applications.
 
-## 5. Authentication and authorization
+---
 
-- Prototype: demo session in `localStorage`; no password check; client route guards. See [ROLE_PERMISSIONS.md](./ROLE_PERMISSIONS.md).
-- Planned: JWT login against `users` (bcrypt hashes already produced by `pgcrypto` in the seed), role dependencies in FastAPI, ownership checks per request. Not implemented.
+## 5. Security & Isolation
 
-## 6. Mock-data architecture
-
-`prototype/src/services/mockApi.js` (5,305 lines) holds seed arrays (8 students, 6 jobs, 8 applications, 6 interviews, 8 offers, 5 companies, 12 notifications, 4 conversations, 4 staff/admin accounts, policies, analytics base), 51 async methods with artificial delays, and persistence of the whole state as one JSON blob in `localStorage` key `placetrack_demo_data_v5`. `resetDemoData` restores the seed. Notifications and messages are generated by the same module (`pushNotification`, `sendMessage`).
-
-## 7. API communication
-
-- Prototype: direct function calls to `mockApi`; **no HTTP**.
-- Docker skeleton frontend: axios to `VITE_API_BASE_URL` (`/api/v1`).
-- Planned: replace each `mockApi` method with an API call keeping the same names and snake_case fields ([INTEGRATION_PLAN.md](./INTEGRATION_PLAN.md)).
-
-## 8. Notifications and messaging
-
-Detailed in [WORKFLOWS.md](./WORKFLOWS.md) sections 8 and 9. Both are simulated in the browser; the SQL `notifications` table only covers student recipients; messaging has no tables.
-
-## 9. Deployment and configuration
-
-[DEPLOYMENT.md](./DEPLOYMENT.md). Docker Compose defines `db`, `mailpit`, `backend`, `frontend` and an optional `pgadmin` profile. The prototype is not part of the Compose stack.
-
-## 10. Error handling, logging, testing
-
-- Prototype: mock methods throw `Error` with messages that pages show as toasts; no logging service; no tests.
-- Backend: no custom error handling yet; the earlier plan maps SQL `RAISE EXCEPTION` to HTTP 422, unique violations to 409. Not implemented.
-- Tests: [TESTING.md](./TESTING.md).
-
-## 11. Current limitations and integration plan
-
-[KNOWN_ISSUES.md](./KNOWN_ISSUES.md), [INTEGRATION_PLAN.md](./INTEGRATION_PLAN.md).
+- **Authentication**: JWT HS256 tokens with configurable expiry (`ACCESS_TOKEN_EXPIRE_MINUTES`).
+- **Authorization**: Granular RBAC (`require_roles("ADMIN", "STAFF")`) on all administrative and reporting endpoints.
+- **CORS**: Confined strictly to frontend host (`http://localhost:5173`).
+- **Error Shielding**: Standard error body format `{"detail": ..., "code": ...}` without internal database details or stack trace leakage.

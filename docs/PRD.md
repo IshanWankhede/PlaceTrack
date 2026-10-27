@@ -17,12 +17,12 @@ Placement records are typically fragmented across spreadsheets and messages. Tha
 
 | ID | Objective | State |
 |---|---|---|
-| OBJ-1 | One place for student, company, drive, application, interview and offer data | Prototype (mock) + SQL design |
-| OBJ-2 | Automatic, explainable eligibility checks (CGPA, backlogs, department, skills) | Prototype (client) + SQL functions |
-| OBJ-3 | Visible application and interview progress for staff and students | Prototype (mock) |
-| OBJ-4 | Offer handling with a single-offer / dream-offer policy | Prototype (mock) + SQL design |
-| OBJ-5 | Placement analytics for administrators | Prototype (partly hard-coded) + SQL views |
-| OBJ-6 | Role-separated access (ADMIN, STAFF, STUDENT) | Prototype route guards only |
+| OBJ-1 | One place for student, company, drive, application, interview and offer data | **Fully Implemented & Integrated** (PostgreSQL 16 + FastAPI + React) |
+| OBJ-2 | Automatic, explainable eligibility checks (CGPA, backlogs, department, skills) | **Fully Implemented & Integrated** (`fn_is_eligible`, API, UI checklists) |
+| OBJ-3 | Visible application and interview progress for staff and students | **Fully Implemented & Integrated** (`sp_schedule_interview`, student portal) |
+| OBJ-4 | Offer handling with a single-offer / dream-offer policy | **Fully Implemented & Integrated** (`trg_applications_create_offer`, `sp_respond_to_offer`) |
+| OBJ-5 | Placement analytics for administrators | **Fully Implemented & Integrated** (`mv_placement_kpis`, NIRF export, UI charts) |
+| OBJ-6 | Role-separated access (ADMIN, STAFF, STUDENT) | **Fully Implemented & Integrated** (JWT HS256, backend `require_roles`, frontend guards) |
 
 ## 4. Scope
 

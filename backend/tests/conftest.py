@@ -16,7 +16,12 @@ def db_connection():
 @pytest.fixture
 def db_session(db_connection):
     transaction = db_connection.begin()
-    session = Session(bind=db_connection, autoflush=False, autocommit=False)
+    session = Session(
+        bind=db_connection,
+        join_transaction_mode="create_savepoint",
+        autoflush=False,
+        autocommit=False,
+    )
 
     yield session
 

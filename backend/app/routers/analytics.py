@@ -23,7 +23,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 @router.get("/overview", response_model=PlacementKPIsOut)
 def get_analytics_overview(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve high-level placement KPIs from mv_placement_kpis."""
     return crud_analytics.get_overview_kpis(db)
@@ -32,7 +32,7 @@ def get_analytics_overview(
 @router.get("/departments", response_model=list[DepartmentStatsOut])
 def get_department_analytics(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve department placement statistics from v_department_stats."""
     return crud_analytics.get_department_stats(db)
@@ -41,7 +41,7 @@ def get_department_analytics(
 @router.get("/companies", response_model=list[CompanySelectionOut])
 def get_company_analytics(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve company selection statistics from v_company_selections."""
     return crud_analytics.get_company_selections(db)
@@ -50,7 +50,7 @@ def get_company_analytics(
 @router.get("/packages", response_model=list[PackageRangeItem])
 def get_package_range_analytics(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve distribution of packages across standard CTC tiers."""
     return crud_analytics.get_package_ranges(db)
@@ -59,7 +59,7 @@ def get_package_range_analytics(
 @router.get("/funnel", response_model=list[FunnelItem])
 def get_application_funnel(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve application funnel conversion counts."""
     return crud_analytics.get_funnel_counts(db)
@@ -69,7 +69,7 @@ def get_application_funnel(
 def get_top_students(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_roles("ADMIN", "STAFF")),
 ):
     """Retrieve top placed students ranked by package."""
     return crud_analytics.get_top_students(db, limit=limit)
