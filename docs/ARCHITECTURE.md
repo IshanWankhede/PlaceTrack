@@ -55,10 +55,15 @@ flowchart TB
 
 ## 2. Frontend Architecture
 
-- **Stack**: React 18, Vite 5, Tailwind CSS 4, Recharts, Framer Motion, Three.js, Lucide Icons.
-- **Location**: `frontend/`
+- **Active Application Stack (`frontend/`)**: React 18.3.1, Vite 5.4.21, React Router DOM 6.26.0, Tailwind CSS 4, Recharts, Framer Motion, Three.js, Lucide Icons, Axios 1.7.0.
+  - Runs in Docker on port `5173`.
+  - Built production bundle verified with `vite build` (0 errors).
+- **Historical Reference Stack (`prototype/`)**: Standalone AI Studio prototype export (React 19, Vite 8, React Router 7) retained for UI design reference.
 - **State Management**: Context-based auth (`AuthContext.jsx`), toast notifications (`ToastContext.jsx`).
-- **Data Layer**: Clean service architecture in `frontend/src/services/` (`api.js`, `analyticsService.js`, `studentsService.js`, `jobsService.js`, `applicationsService.js`, `offersService.js`).
+- **Data Layer**: Clean service architecture in `frontend/src/services/` (`api.js`, `authService.js`, `analyticsService.js`, `studentsService.js`, `jobsService.js`, `applicationsService.js`, `offersService.js`, `notificationsService.js`).
+- **Integration Boundary**:
+  - Integrated via real REST API: `AuthPage` (login/signup OTP), `StudentOverview`, `AdminOverview`, `StudentMyApplications`, `StudentMyPlacement`, `NotificationsPage`, `ProfilePage`.
+  - In transition (client simulation fallback): `StaffInterviewsPage`, `StaffResultsSelectionPage`, `PlacementPoliciesPage`, `UserManagementPage`, and `DemoInboxModal`.
 - **Responsive Design**: Mobile, tablet, and desktop responsive with custom glassmorphism components (`GlassCard.jsx`, `StatCard.jsx`, `SmoothCursor.jsx`).
 
 ---

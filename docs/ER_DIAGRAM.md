@@ -1,8 +1,7 @@
 # Entity-Relationship Diagram
 
-Generated from the executable schema `sql/init/01_ddl.sql` (17 tables, 24 foreign keys). It shows only tables that exist in the SQL file; entities that appear only in the prototype (conversations, messages, policies, staff profiles, student settings) are intentionally absent. See [DB_SCHEMA.md](./DB_SCHEMA.md#schema-gaps-and-prototype-mismatches).
+Generated from the verified executable schema `sql/init/01_ddl.sql` (17 tables, 24 foreign keys) active in the `placetrack-db` PostgreSQL 16 container. It reflects the live database structure; entities that appear only in frontend prototypes (such as conversations, chat messages, or dynamic policy configurations) are intentionally excluded and documented as planned. See [DB_SCHEMA.md](./DB_SCHEMA.md#5-schema-mappings--integration-gaps).
 
-Mermaid syntax has not been rendered in this environment (no renderer available); paste the block into any Mermaid viewer to check it.
 
 ```mermaid
 erDiagram

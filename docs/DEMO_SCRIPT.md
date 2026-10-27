@@ -6,18 +6,18 @@ This document provides a minute-by-minute walkthrough for the DBMS course viva a
 
 ## ⏱️ Minute-by-Minute Demonstration Flow (Total: ~22 minutes)
 
-### Part 1: Schema & Entity-Relationship Architecture (2 mins)
+### Part 1: Schema & Entity-Relationship Architecture (3 mins)
 **Tool**: pgAdmin 4 (`localhost:5433` -> `placetrack_db`)
 1. **Navigate to Database Tree**:
    - Expand `Servers` → `PlaceTrack PostgreSQL 16` → `Databases` → `placetrack_db` → `Schemas` → `public`.
    - Right-click on `Tables` → **Generate ERD**.
 2. **Key Talking Points**:
    - Highlight the **17 tables** in 3NF (Third Normal Form):
-     - Core entities: `departments`, `skills`, `students`, `companies`, `jobs`, `users`.
-     - Relationship/Junction tables: `student_skills`, `job_skills`, `job_departments`.
-     - Transactional lifecycle: `applications`, `application_status_history`, `interviews`, `offers`, `placements`.
-     - Security & Communication: `email_otps`, `notifications`.
-   - Point out that there is zero surrogate key redundancy on junction tables; natural composite primary keys are used (`student_skills (student_id, skill_id)`).
+     - **Core Entities**: `departments`, `skills`, `students`, `companies`, `jobs`, `users`.
+     - **Relationship / Junction Tables**: `student_skills`, `job_skills`, `job_departments`.
+     - **Transactional Lifecycle**: `applications`, `application_status_history`, `interviews`, `offers`, `placements`.
+     - **Security & Notification**: `email_otps`, `notifications`.
+   - Zero surrogate key redundancy on junction tables; natural composite primary keys are used (`student_skills (student_id, skill_id)`).
 
 ---
 
@@ -38,14 +38,14 @@ This document provides a minute-by-minute walkthrough for the DBMS course viva a
      - `jobs.package > 0`
    - **Enumerated Types & State Machine Integrity**:
      - Application status: `APPLIED`, `SHORTLISTED`, `INTERVIEW`, `SELECTED`, `REJECTED`, `WITHDRAWN`.
-     - Company tiers: `MASS_RECRUITER`, `CORE`, `DREAM`, `SUPER_DREAM`.
+     - Company tiers: `CORE`, `DREAM`, `SUPER_DREAM`.
    - **Referential Integrity**:
      - `ON DELETE RESTRICT` on departments and companies to preserve historical audit records.
      - `ON DELETE CASCADE` on transient junction rows like `job_skills`.
 
 ---
 
-### Part 3: DML, Joins, Aggregates & Complex DQL (5 mins)
+### Part 3: DML, Joins, Aggregates & Complex DQL (4 mins)
 **Tool**: Query Tool in pgAdmin (`sql/demo/10_dql_joins.sql`, `11_dql_aggregates.sql`, `12_dql_subqueries_cte.sql`)
 1. **Multi-Table Joins**:
    - Execute query joining `applications`, `students`, `jobs`, `companies`, and `departments` to display the active recruitment cohort.
@@ -86,7 +86,7 @@ This document provides a minute-by-minute walkthrough for the DBMS course viva a
      -- Student 3 (Rohan, 1 backlog) against Job 1 (Max backlogs 0):
      SELECT fn_is_eligible(3, 1); -- Returns FALSE
      ```
-3. **Trigger Enforcements & Blocked Cases**:
+3. **Trigger Enforcements & Blocked Invariants**:
    - Show trigger preventing double application or ineligible application:
      ```sql
      -- Attempt to apply ineligible student (Blocked by trg_applications_validate_insert)
@@ -119,21 +119,20 @@ This document provides a minute-by-minute walkthrough for the DBMS course viva a
 
 ### Part 6: Live Web Application Demonstration (5 mins)
 **Tool**: Web Browser (`http://localhost:5173`)
-1. **Student Experience**:
-   - Log in as student (`aarav.sharma@example.edu` / `Student@123`).
-   - Navigate to `/dashboard/jobs` -> show real-time eligibility tags (CGPA match, backlogs check, department eligibility).
-   - View `/dashboard/my-placement` -> show active placement details at TechNova (12.00 LPA).
-2. **Staff / Admin Management**:
-   - Switch to admin (`admin@placetrack.com` / `Admin@123`).
+1. **Student Experience (Aarav Sharma)**:
+   - Log in using verified credentials: `aarav.sharma@example.edu` / `Student@123`.
+   - Open `/dashboard/profile`: show academic credentials displayed (Roll Number, CGPA, Backlogs, Department).
+   - Navigate to `/dashboard/drives`: show live job postings fetched from FastAPI backend, with real-time eligibility tags.
+   - View `/dashboard/applications`: show submitted applications enriched via multi-table SQL joins with company, role, package, and interview rounds.
+   - View `/dashboard/placements`: show active placement details at TechNova (12.00 LPA).
+2. **Admin Experience (Dean of Corporate Relations)**:
+   - Sign in as Admin: `admin@placetrack.com` / `Admin@123`.
+   - Open `/dashboard/profile`: verify **profile credential isolation** (displays Institutional Role, Office, and Unit; student CGPA and backlogs are strictly omitted).
    - Open `/dashboard/analytics`:
      - Show Materialized View placement KPI cards.
      - Show Department-wise placement rate chart.
      - Show Company CTC distribution and Top Placed Students table.
-     - Click **Refresh Analytics** -> triggers `sp_refresh_analytics()` via API.
-   - Open `/dashboard/applications`:
-     - Show application pipeline.
-     - Filter by job or stage.
-     - Schedule interview -> show email notification generated in Mailpit (`http://localhost:8025`).
+   - Open `/dashboard/notifications`: show clean notification view (graceful `[]` returned by backend without 403 error).
 
 ---
 

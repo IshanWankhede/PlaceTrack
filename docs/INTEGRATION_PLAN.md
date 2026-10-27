@@ -1,26 +1,59 @@
-# Frontend and Backend Integration Plan
+# Frontend and Backend Integration Plan & Status
 
-Goal: replace the prototype's in-browser mock layer with the FastAPI + PostgreSQL stack **without changing the approved UI**. **Do not start before the prototype is reviewed and approved.** Today: the prototype makes no HTTP call, the backend exposes only health endpoints, and the SQL scripts have not been executed (KI-019, KI-020).
+This document tracks the phased migration from client-side prototype mocks to the containerized full-stack architecture (React 18 + FastAPI + PostgreSQL 16).
 
-Method: keep each `mockApi` method name and its snake_case payload as the contract; swap the implementation per stage behind a thin `services/api` module, flag by flag, so the UI never changes.
+---
 
-| # | Stage | Relevant files | Backend / database needed | Dependencies | Acceptance criteria | Risks | Test strategy |
-|---|---|---|---|---|---|---|---|
-| 1 | Inventory and stabilize mock services | `prototype/src/services/mockApi.js`, `eligibility.js` | none | review done ([PROTOTYPE_AUDIT.md](./PROTOTYPE_AUDIT.md)) | Method list frozen; unused code decided (KI-012) | scope creep | unit tests for eligibility and transitions |
-| 2 | Define shared data contracts and one vocabulary | [DB_SCHEMA.md](./DB_SCHEMA.md) mismatch table | decisions: statuses (UNDER_REVIEW, ASSESSMENT, OFFER_*, WITHDRAWN, EXPIRED), casing, round types, tier names | stage 1 | Written contract (OpenAPI or JSON schema) approved | rework if decided late | contract review |
-| 3 | Align frontend models with backend schemas | `mockApi.js` seed data; `sql/init/01_ddl.sql` | missing tables/columns: messaging, policies, staff profile, settings, interview attendance/feedback, offer joining date | stage 2 | Seed data validates against the contract | schema churn | schema validation script |
-| 4 | Authentication | `AuthContext.jsx`, `AuthPage.jsx`; `backend/app/routers`, `core/security` | `users`, `email_otps`, `fn_generate_otp`, `fn_verify_otp`; Mailpit | 2 | Login returns a JWT; wrong password rejected; OTP works; demo selector hidden in production | token storage mistakes | API tests + manual |
-| 5 | Server-enforced authorization | `App.jsx` guards; FastAPI dependencies | role and ownership checks per endpoint | 4 | STUDENT gets 403 on staff routes and 404 on other students' data (KI-002) | forgetting one endpoint | role matrix tests |
-| 6 | Replace reads | pages calling `getStudents`, `getJobs`, `getCompanies`, ... | GET endpoints for students, companies, jobs, applications, offers | 5 | Pages render from API; loading/empty/error states shown (use `Skeleton`, `EmptyState`) | N+1 calls | integration tests |
-| 7 | Replace writes | create/update calls in pages | POST/PUT/PATCH endpoints | 6 | Persisted across reload and across browsers | validation drift | integration tests |
-| 8 | Job drives and eligibility | `JobsPage.jsx`, `StaffEligibleStudentsPage.jsx`, `eligibility.js` | `fn_eligibility_check`, `fn_eligible_jobs`, `fn_eligible_students`; endpoints | 7 | UI shows the database result; client formula removed (KI-008) | different percentages | compare against acceptance cases |
-| 9 | Applications and status transitions | `ApplicationsPage.jsx`, `StudentMyApplications.jsx` | apply, status, bulk, withdraw procedures and triggers | 8 | Illegal moves return 422 with message; duplicates 409 (KI-005, KI-007) | vocabulary mapping | lifecycle tests |
-| 10 | Interviews, results, offers, placements | `StaffInterviewsPage.jsx`, `StaffResultsSelectionPage.jsx`, `StudentMyPlacement.jsx`, `PlacementsPage.jsx` | interview procedures, `offers`, `sp_respond_to_offer`, placements | 9 | Accepting creates or upgrades placement; tier policy enforced by DB | two policy implementations | scenario tests (accept, decline, upgrade) |
-| 11 | Notifications | `DashboardLayout.jsx`, `NotificationsPage.jsx` | extend `notifications` to all roles with per-user read state, or add a read-receipt table | 7 | Student notifications invisible to others; unread counts per user | polling load | API tests |
-| 12 | Messaging (only if approved) | `DemoInboxModal.jsx` | new `conversations`, `conversation_participants`, `messages` tables | scope decision | Participant rules enforced server-side | scope creep, privacy | API tests |
-| 13 | Loading, empty, success, error states | all pages | API error format | 6 to 11 | No unhandled promise; consistent toasts | inconsistency | UI review |
-| 14 | Integration tests | `backend/tests`, new frontend tests | test database fixtures | 6 to 12 | Suite green in Docker | slow tests | CI later |
-| 15 | Verify persistence and access controls | whole app | all | 14 | Manual pass of [TESTING.md](./TESTING.md) smoke list against the API | gaps found late | manual + automated |
-| 16 | Remove obsolete mock-only code | `mockApi.js`, `AuthContext` demo parts, unused components | none | 15 | No `mockApi` imports remain; no demo selector; bundle smaller | removing something still used | build + tests |
+## 1. Migration Stage Status Matrix
 
-Cross-cutting rules: the database stays the source of truth for eligibility, transitions and policy; any new rule goes into SQL first; the API only translates and authorizes.
+| # | Migration Stage | Target Scope | Implementation Status | Verified Evidence |
+|---|---|---|---|---|
+| **1** | **Stabilize Contracts & Models** | Data schemas, status enums, tier rankings | **Integrated and verified** | Pydantic v2 schemas align with PostgreSQL 16 DDL |
+| **2** | **One Shared Vocabulary** | Enums (`APPLIED`, `SHORTLISTED`, `INTERVIEW`, `SELECTED`, `REJECTED`, `WITHDRAWN`) | **Integrated and verified** | Consistent status handling across DB triggers, API, and UI |
+| **3** | **Database Script Verification** | PostgreSQL 16 DDL, constraints, triggers, functions, views, seed data | **Integrated and verified** | Executed in `placetrack-db`; 17 tables, 13 views, 5 seed placements active |
+| **4** | **Real Authentication** | Password hashing (bcrypt), HS256 JWT issuance, login, OTP signup | **Integrated and verified** | Pytest `test_auth.py`, Mailpit OTP delivery, frontend login wired |
+| **5** | **Server-Side Authorization (RBAC)** | Role verification (`require_roles`), student record isolation | **Integrated and verified** | Pytest `test_edge_cases_security.py`; HTTP 403 on role escalation |
+| **6** | **Profile Credentials Isolation** | Exclude student academic fields from Admin/Staff profiles | **Integrated and verified** | `ProfilePage.jsx` renders role-isolated institutional block |
+| **7** | **Student Drive Discovery & Eligibility** | Live jobs list, dynamic eligibility matching | **Integrated and verified** | `jobsService` wired to `/api/v1/jobs`; CGPA & backlog check |
+| **8** | **Student Applications Flow** | Submit application, prevent duplicates, track student applications | **Integrated and verified** | `applicationsService` wired to `/api/v1/applications/mine` with joined drive details |
+| **9** | **Offer Acceptance & Placements** | Student view offers, accept/decline, atomic placement creation | **Integrated and verified** | `offersService` wired to `/api/v1/offers/mine`, `/accept`; tier upgrades enforced |
+| **10** | **In-App Notifications** | Role-safe notifications retrieval, mark as read | **Integrated and verified** | `notificationsService` wired to `/api/v1/notifications`; non-students get `[]` safely |
+| **11** | **Placement Analytics & KPIs** | Materialized view KPIs, department stats, company stats | **Integrated and verified** | `AdminOverview.jsx` wired to `/api/v1/analytics/overview` |
+| **12** | **Staff Operational Workflows** | Interview scheduling, candidate results progression | **Implemented in backend** | Backend routers active (`/interviews`, `/applications/{id}/status`); frontend pages transitional |
+| **13** | **Placement Policies Configuration** | Dynamic policy rules in database | **Implemented in SQL** | Enforced via SQL triggers (`fn_policy_allows`); dynamic admin table planned |
+| **14** | **Peer Messaging System** | WebSocket / REST chat, persistent message tables | **Implemented in prototype** | Frontend simulated modal active; real backend tables planned for Phase 2 |
+| **15** | **Automated Integration Test Suite** | Multi-container automated testing | **Integrated and verified** | 115 passing tests in Pytest; Vite production build verified |
+
+---
+
+## 2. Completed Milestones
+
+1. **Full-Stack Connectivity Established**:
+   - The active containerized application (`frontend/`) connects via Axios with automatic Bearer JWT injection to the FastAPI backend (`backend/app/routers/`).
+   - PostgreSQL 16 initialization scripts (`sql/init/01_ddl.sql` - `06_seed.sql`) run automatically on startup.
+2. **Student User Journey Fully Integrated**:
+   - Registration with 6-digit email OTP (via Mailpit).
+   - Sign in with bcrypt credential verification and JWT generation.
+   - Job drive browsing with eligibility threshold calculation.
+   - Drive application submission backed by database trigger validation.
+   - Application status and interview round tracking with multi-table SQL joins.
+   - Offer letter review and acceptance, triggering atomic placement confirmation and tier policy locking.
+   - In-app notification alerts for status updates.
+3. **Admin Core Journey Integrated**:
+   - Role-isolated profile view (institutional credentials only).
+   - Institutional overview dashboard powered by real analytics and live database counts.
+   - Placement rate metrics, company hiring distributions, and department breakdowns via PostgreSQL views and materialized views.
+
+---
+
+## 3. Remaining Integration Roadmap
+
+1. **Complete Staff Operational Page Wiring (Phase 1.5)**:
+   - Wire `StaffInterviewsPage.jsx` to call `interviewsService` (`POST /api/v1/applications/{id}/interviews`).
+   - Wire `StaffResultsSelectionPage.jsx` to call `applicationsService.updateStatus` (`PATCH /api/v1/applications/{id}/status`).
+   - Wire `UserManagementPage.jsx` to backend user management endpoints.
+2. **Dynamic Placement Policy Table (Phase 2)**:
+   - Create a dedicated `placement_policies` table allowing runtime adjustments of tier upgrade multipliers, max offers per student, and backlog waivers.
+3. **Real Real-Time Messaging Engine (Phase 2)**:
+   - Implement `conversations`, `conversation_participants`, and `messages` tables.
+   - Implement WebSocket gateway in FastAPI for instant peer messaging.

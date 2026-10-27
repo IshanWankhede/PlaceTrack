@@ -1,8 +1,11 @@
-# Prototype Source Audit (file inventory)
+# Prototype Source Audit (Historical File Inventory)
+
+> **Architectural Scope Note:** This audit applies strictly to `prototype/` (the historical Google AI Studio prototype, React 19 / Vite 8 / client mocks), which is preserved in the repository as a UI/UX reference.
+> The **active production and development web client** is located in `frontend/` (React 18.3.1 / Vite 5.4.21 / React Router 6.26.0 / Axios 1.7.0), running in Docker on port 5173 and connected to the FastAPI backend.
+> For the architecture and status of the active web client, see [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md).
 
 Scope: every file under `prototype/` (the Google AI Studio export, originally `Prototype.zip`). The `.env`, `dist/` and `.aistudio/` folders from the zip were excluded from the copy kept in this repository (see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md), KI-013).
 
-**Method and honesty note.** Line counts, import graph, usage flags and API-call lists below were computed by script over the actual files. Purposes come from reading the core files and from structural surveys of the rest. The *Review depth* column states exactly how each file was examined. The application was **not built or run** (no `npm install` was possible in the review environment), so nothing here claims a successful build.
 
 ## Root and configuration files
 

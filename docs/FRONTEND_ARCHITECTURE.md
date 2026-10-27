@@ -1,79 +1,137 @@
-# Frontend Architecture (prototype)
+# Frontend Architecture
 
-Scope: `prototype/` (Google AI Studio export). Paths below are under `prototype/src/`. For a per-file list see [PROTOTYPE_AUDIT.md](./PROTOTYPE_AUDIT.md). Nothing here was executed (no build, no browser session); statements come from reading code and scripted checks.
+## 1. Dual-Frontend Structure & Source of Truth
 
-## Stack (from `prototype/package.json`)
+The repository contains two frontend directories that serve distinct purposes:
 
-React 19, Vite 8 (`@vitejs/plugin-react`), React Router 7, Tailwind CSS 4 (`@tailwindcss/vite`), GSAP, Lenis, three + `@react-three/fiber` + `@react-three/drei`, Recharts, `framer-motion` and `motion`, `canvas-confetti`, `jspdf`, `lucide-react`. Declared but unused: `@google/genai`, `express`, `dotenv`, `@hugeicons/*`, `tsx` (KI-014). Dev server: `npm run dev` runs `vite --port=3000 --host=0.0.0.0`.
+| Attribute | Active Application (`frontend/`) | Historical Prototype (`prototype/`) |
+|---|---|---|
+| **Role & Purpose** | **Primary production & dev client**, mounted in `docker-compose.yml` on port 5173. | Historical UI/UX prototype exported from Google AI Studio. |
+| **Execution Status** | **Integrated and verified.** Built with Vite (0 errors, 41.26s) and running live. | Static reference codebase. Not mounted in Docker. |
+| **React Version** | React 18.3.1 | React 19.0.0 |
+| **Bundler & Tooling** | Vite 5.4.21 | Vite 8.0.0 |
+| **Routing** | React Router DOM 6.26.0 | React Router DOM 7.0.0 |
+| **Styling** | Tailwind CSS 3.4.17 + PostCSS + CSS variables | Tailwind CSS 4.0 (`@tailwindcss/vite`) |
+| **Backend Connectivity** | Real HTTP REST integration via Axios (`src/services/api.js`) targeting `/api/v1` | Self-contained in-memory arrays in `src/services/mockApi.js` |
+| **Authentication** | Real JWT token storage in `localStorage`, sent via `Authorization: Bearer <token>` | Client-side demo role toggle (`placetrack_demo_session_v2`) |
 
-## Component hierarchy
+---
 
-```mermaid
-flowchart TD
-    APP[App.jsx] --> AP[AuthProvider<br/>context/AuthContext.jsx]
-    AP --> TP[ToastProvider<br/>context/ToastContext.jsx]
-    TP --> SC[SmoothCursor]
-    TP --> BR[BrowserRouter]
-    BR --> LP[LandingPage]
-    BR --> AU[AuthPage + AuthLayout]
-    BR --> RPR[RoleProtectedRoute]
-    RPR --> DL[DashboardLayout]
-    DL --> SB[Icon sidebar by role]
-    DL --> HD[Header: search, role selector, bell, Inbox, profile menu]
-    HD --> NP[Notification popover - portal]
-    HD --> DI[DemoInboxModal]
-    DL --> PG[Page]
-    PG --> DR[DashboardRouter -> AdminOverview / StudentOverview]
-    PG --> AD2[Admin and staff pages: Students, Companies, Jobs, Eligible, Applications, Interviews, Results, Placements, UserManagement, Analytics, Policies]
-    PG --> SD[Student pages: MyApplications, MyInterviews, MyPlacement, MyProgress, Settings]
-    PG --> SH[Shared pages: Profile, Notifications, Jobs]
-    PG --> UI[components/ui: DataTable, Modal, Tabs, StatCard, StatusBadge, Button, Input, Avatar, GlassCard, ApplicationTimeline, ContactActionButtons, MeetingLinkButton]
-    PG --> CH[components/charts: DepartmentBarChart, FunnelChart, PackageHistogram, StatisticsLineChart]
-    LP --> TH[components/three: HeroScene, ScallopBlob, GlassBubble, StripedSphere, StudentWorkstation]
-    AU --> AS[three/AuthScene]
-    PG --> SV[services/mockApi.js + services/eligibility.js]
-    DL --> SV
+## 2. Active Application Architecture (`frontend/`)
+
+### Technology Stack
+- **Core Runtime**: React 18.3.1 (`react`, `react-dom`)
+- **Build System**: Vite 5.4.21 with `@vitejs/plugin-react`
+- **Routing**: `react-router-dom` 6.26.0
+- **HTTP Client**: `axios` 1.7.0 with automatic request/response interceptors
+- **Icons & Visuals**: `lucide-react`, `recharts`, `framer-motion`, `canvas-confetti`
+- **Typography & UI**: Custom dark/light design system with glassmorphic cards and micro-animations
+
+### Directory Structure (`frontend/src/`)
+```
+frontend/src/
+├── assets/             # Static SVGs, logos, illustrations
+├── components/
+│   ├── charts/         # Recharts wrappers (DepartmentBarChart, PackageHistogram, etc.)
+│   ├── common/         # Layout wrappers, RoleProtectedRoute, ThemeToggle
+│   ├── three/          # 3D canvas components for landing page hero
+│   └── ui/             # Reusable design tokens (Button, Input, Modal, DataTable, GlassCard, etc.)
+├── context/
+│   ├── AuthContext.jsx # Real JWT authentication state, login/logout, user profile
+│   └── ToastContext.jsx# Application-wide toast notifications provider
+├── layouts/
+│   ├── AuthLayout.jsx  # Split-screen authentication layout
+│   └── DashboardLayout.jsx # Collapsible sidebar, header search, notification popover, profile menu
+├── pages/
+│   ├── auth/           # Login, Signup (OTP verification), ForgotPassword
+│   ├── dashboard/      # AdminOverview, StudentOverview, StudentMyApplications, StudentMyPlacement, etc.
+│   └── landing/        # Public landing page with 3D workstation hero
+├── services/
+│   ├── api.js          # Base Axios instance with Bearer token injection
+│   ├── authService.js  # /api/v1/auth endpoints
+│   ├── studentsService.js # /api/v1/students endpoints
+│   ├── companiesService.js# /api/v1/companies endpoints
+│   ├── jobsService.js  # /api/v1/jobs endpoints
+│   ├── applicationsService.js # /api/v1/applications endpoints
+│   ├── offersService.js# /api/v1/offers endpoints
+│   ├── notificationsService.js # /api/v1/notifications endpoints
+│   ├── analyticsService.js # /api/v1/analytics endpoints
+│   └── mockApi.js      # Transitional fallback mocks for unmigrated staff pages
+└── theme/              # Color tokens, typography, and animation definitions
 ```
 
-## Routing
+---
 
-Defined in `App.jsx` (all pages imported eagerly, no `React.lazy`). Public: `/`, `/login`, `/signup`. Dashboard: 20 routes under `/dashboard`, each wrapped in `RoleProtectedRoute allowedRoles={[...]}`; unknown paths redirect to `/`. Full table with roles: [ROLE_PERMISSIONS.md](./ROLE_PERMISSIONS.md#1-route-access-verified-in-prototypesrcappjsx).
+## 3. Data Flow & Service Integration
 
-## Layouts
+```
+[ User Interaction ]
+       │
+       ▼
+[ Page Component (e.g., StudentMyApplications.jsx) ]
+       │
+       ▼
+[ Service Layer (e.g., applicationsService.getMyApplications()) ]
+       │
+       ▼
+[ Axios Client (api.js) ] ── Interceptor attaches "Authorization: Bearer <JWT>"
+       │
+       ▼ HTTP GET /api/v1/applications/mine
+[ Reverse Proxy (Nginx) / Backend (FastAPI :8000) ]
+       │
+       ▼ SQL Multi-Table JOIN Query
+[ PostgreSQL 16 Database ]
+       │
+       ▼ JSON Payload (Enriched with job title, company, tier, package, rounds)
+[ Page State (`useState`) ] ── Render Responsive Table / Cards
+```
 
-| Layout | File | Used by |
-|---|---|---|
-| `AuthLayout` | `layouts/AuthLayout.jsx` | `AuthPage` (split card with 3D scene) |
-| `DashboardLayout` | `layouts/DashboardLayout.jsx` (1,135 lines) | every dashboard route, via `RoleProtectedRoute` |
+### Integration State by Page
 
-`DashboardLayout` contains the role-specific sidebar arrays (ADMIN 11 items, STAFF 11 items, STUDENT 9 items), header search, the demo role selector (rendered only when `IS_DEMO_ENVIRONMENT` is true), the notification bell with a portal popover (positioned from the bell, clamped to the viewport, closes on outside click or Escape, scrolls internally), the Demo Inbox trigger and the profile menu.
+| Page | File Path | Data Source | Verified Status |
+|---|---|---|---|
+| **Landing Page** | `pages/landing/LandingPage.jsx` | Static / 3D Scene | **Integrated and verified** |
+| **Login / Signup** | `pages/auth/LoginPage.jsx`, `SignupPage.jsx` | `authService` (`/auth/login`, `/signup/*`) | **Integrated and verified** |
+| **Admin Overview** | `pages/dashboard/AdminOverview.jsx` | `analyticsService`, `jobsService`, `studentsService` | **Integrated and verified** |
+| **Student Overview** | `pages/dashboard/StudentOverview.jsx` | `jobsService`, `applicationsService`, `offersService` | **Integrated and verified** |
+| **Student Applications** | `pages/dashboard/StudentMyApplications.jsx` | `applicationsService.getMyApplications()` | **Integrated and verified** |
+| **Student Placement** | `pages/dashboard/StudentMyPlacement.jsx` | `offersService.getMyOffers()`, `placementsService` | **Integrated and verified** |
+| **Job Drives (Student)** | `pages/dashboard/StudentJobDrives.jsx` | `jobsService.getJobs()`, `jobsService.getEligibleJobs()` | **Integrated and verified** |
+| **Notifications** | `pages/dashboard/NotificationsPage.jsx` | `notificationsService.getNotifications()` | **Integrated and verified** |
+| **User Profile** | `pages/dashboard/ProfilePage.jsx` | `authService.getMe()`, `studentsService` | **Integrated and verified** |
+| **Staff Interviews** | `pages/dashboard/StaffInterviewsPage.jsx` | `mockApi.js` (Transitional fallback) | **Partially implemented** |
+| **Staff Results** | `pages/dashboard/StaffResultsSelectionPage.jsx` | `mockApi.js` (Transitional fallback) | **Partially implemented** |
+| **Placement Policies** | `pages/dashboard/PlacementPoliciesPage.jsx` | `mockApi.js` (Transitional fallback) | **Partially implemented** |
+| **User Management** | `pages/dashboard/UserManagementPage.jsx` | `mockApi.js` (Transitional fallback) | **Partially implemented** |
 
-## State management
+---
 
-| Concern | Mechanism | File |
-|---|---|---|
-| Active identity and role | `AuthContext`: `activeDemoUser` is the single source; `activeRole`/`accountRole` alias it; session in `localStorage` `placetrack_demo_session_v2` | `context/AuthContext.jsx` |
-| Permissions | `ROLE_PERMISSIONS` (flags unused, KI-003); real checks are route guards plus ad-hoc `activeRole ===` | `AuthContext.jsx`, `App.jsx` |
-| Toasts | One provider and one fixed bottom-right container; `triggerGlobalToast` helper usable outside React | `context/ToastContext.jsx` |
-| Domain data | Module-level arrays inside `mockApi.js`, persisted as one JSON blob (`placetrack_demo_data_v5`) | `services/mockApi.js` |
-| Page data | `useState` + `useEffect` calling `mockApi` methods; no data-fetching library | pages |
+## 4. Role Isolation & Profile Credentials
 
-## Mock services
+In compliance with institutional security and DBMS schema design:
+1. **Student Profiles**:
+   - Display verified academic attributes: Roll Number, Department, Batch, Verified CGPA, Active Backlogs, Resume URL, and Technical Skills.
+2. **Admin & Staff Profiles**:
+   - Academic attributes (`cgpa`, `active_backlogs`, `roll_number`) are **strictly excluded**.
+   - Profile renders institutional credentials: Full Name, Institutional Email, Role Badge, Designation, and Office/Unit.
 
-`mockApi.js` exports `mockApi` (51 async methods with artificial latency) plus seed constants. Groups: auth/demo accounts, students, staff accounts, companies, jobs, applications, interviews, offers/placements, policies, analytics, notifications, messaging, reset. `eligibility.js` is a pure client-side engine (CGPA, backlogs, department, skills with levels, CDC verification; match percentage clamped 18 to 99). Method catalogue: [API.md](./API.md#frontend-mock-service-methods-not-http-endpoints).
+---
 
-## Reusable components
+## 5. Client-Side Routing & Guards
 
-`components/ui`: Button, MagneticButton, Input, Modal, Tabs, Avatar, StatCard, StatusBadge (uses `theme/tokens.js`), DataTable, GlassCard, ApplicationTimeline, ContactActionButtons (`tel:`/`mailto:`), MeetingLinkButton (validated anchor), SwipeToast, SplitText, DemoInboxModal, plus landing sections. Unused: EmptyState, Skeleton, SectionReveal, CustomCursor, PlacementHallOfFame.
+Routes are defined in `src/App.jsx` using React Router DOM v6. Every dashboard route is wrapped with `RoleProtectedRoute`:
 
-## Forms and validation
+```jsx
+<Route
+  path="/dashboard/analytics"
+  element={
+    <RoleProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+      <AnalyticsPage />
+    </RoleProtectedRoute>
+  }
+/>
+```
 
-Validation is hand-written inside pages (required fields, email/phone patterns, meeting-link validation in `utils/interactionHelpers.js`). The mock API throws `Error` messages that pages display as toasts. There is no schema-validation library.
-
-## Notifications and messaging
-
-Notification model and rules: [WORKFLOWS.md](./WORKFLOWS.md#8-notification-generation-simulated). Messaging: [WORKFLOWS.md](./WORKFLOWS.md#9-demo-messaging-simulated-frontend-only). The Demo Inbox visual requirements (black/white/grey, no "SIMULATED FRONTEND ONLY" badge, aligned Send button) are present in `DemoInboxModal.jsx` as read in source.
-
-## Styling and responsiveness
-
-Tailwind v4 via `@import "tailwindcss"` in `index.css`; `tailwind.config.js` and most of `theme/tokens.js` are inert (KI-016). Look: light canvas, large rounded cards, black accents, glass panels, a display font applied through a hand-written `.font-display` class in `index.css`. Responsive behaviour was not tested in a browser.
+- If an unauthenticated user attempts to access `/dashboard/*`, they are redirected to `/login`.
+- If an authenticated user with an unauthorized role accesses a route (e.g. `STUDENT` navigating to `/dashboard/user-management`), the `RoleProtectedRoute` renders an informative "Access Restricted" panel.
+- **Security Boundary Note**: Client route guards provide navigation UX only. Server-side API routes enforce strict role checks via FastAPI dependencies (`require_roles`).

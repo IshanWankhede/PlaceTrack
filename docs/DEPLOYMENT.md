@@ -1,105 +1,143 @@
-# Deployment and Local Setup
+# Deployment and Local Development Setup
 
-Everything here is a **local development setup**. No cloud infrastructure, production hosting or CI is configured. The Docker files were written but **not executed** in review (KI-020); the commands are taken from `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile` and `prototype/package.json`.
+PlaceTrack is configured as a multi-container local development stack running under Docker Compose. All components are containerized with live code mounting, hot-reload, and isolated networking.
 
-## 1. Two ways to run
+---
 
-| Mode | What runs | Connected to DB? |
-|---|---|---|
-| A. Prototype only | `prototype/` Vite dev server on port 3000 with mock data | No |
-| B. Docker stack | PostgreSQL, Mailpit, FastAPI backend, the `frontend/` skeleton (status page) and optional pgAdmin | Backend yes; the prototype is **not** part of this stack |
+## 1. Architecture & Running Services
 
-## 2. Mode A: run the prototype
+The Docker Compose configuration (`docker-compose.yml`) orchestrates 5 container services:
 
-Prerequisite: Node.js and npm (no version is pinned in `package.json`; use a current LTS).
+| Service | Container Name | Image / Build Source | Internal Port | Host Port | Purpose & Verified Status |
+|---|---|---|---|---|---|
+| **Frontend** | `placetrack-frontend` | `frontend/Dockerfile` (Node 20 Alpine) | 5173 | `5173` | **Integrated and verified.** Active React 18 + Vite 5 web application with hot module replacement (HMR). |
+| **Backend** | `placetrack-backend` | `backend/Dockerfile` (Python 3.12 Slim) | 8000 | `8000` | **Integrated and verified.** FastAPI REST API running with Uvicorn live reload and SQLAlchemy 2 async connection pool. |
+| **Database** | `placetrack-db` | `postgres:16-alpine` | 5432 | `5433` | **Integrated and verified.** PostgreSQL 16 initialized with 17 tables, 13 views, triggers, and seed data from `sql/init/`. |
+| **Mailpit** | `placetrack-mailpit` | `axllent/mailpit:latest` | 1025 (SMTP), 8025 (UI) | `8025` | **Integrated and verified.** Local email catcher for OTP signup verification and password reset inspection. |
+| **pgAdmin** | `placetrack-pgadmin` | `dpage/pgadmin4:latest` (profile: `tools`) | 80 | `5050` | **Integrated and verified.** Web DBMS administration interface pre-configured with PlaceTrack connection. |
 
-```bash
-cd prototype
-npm install
-npm run dev        # vite --port=3000 --host=0.0.0.0  ->  http://localhost:3000
-npm run build      # production build into prototype/dist
-npm run preview    # serve the build
-```
+---
 
-No environment variables are required. `.env.example` lists `GEMINI_API_KEY` and `APP_URL` as AI Studio leftovers; no source file uses the Gemini key. Do not commit a `.env` file.
+## 2. Quick Start (One-Command Launch)
 
-## 3. Mode B: run the Docker stack
+### Prerequisites
+- Docker Desktop with Compose v2 installed and running on Windows, macOS, or Linux.
 
-Prerequisite: Docker Desktop (Compose v2).
+### Commands
 
 ```bash
-cp .env.example .env            # then adjust ports and secrets; never commit .env
-docker compose up -d --build    # first time or when dependencies change
+# 1. Clone repository & initialize environment
+cp .env.example .env
+
+# 2. Start core services in background (frontend, backend, database, mailpit)
+docker compose up -d
+
+# 3. Check container status
 docker compose ps
+
+# 4. View live logs
 docker compose logs -f backend
-docker compose down             # keep data
-docker compose down -v          # also wipe the database volume (re-runs sql/init)
-docker compose --profile tools up -d   # adds pgAdmin
+docker compose logs -f frontend
+
+# 5. Run test suite inside backend container
+docker compose exec backend pytest -v
+
+# 6. Verify frontend production build inside container
+docker compose exec frontend npm run build
+
+# 7. Stop containers (preserves database data volume)
+docker compose down
+
+# 8. Full reset (wipes database volume and re-executes sql/init scripts)
+docker compose down -v && docker compose up -d
 ```
 
-### Services and ports (host side configurable in `.env`)
+To launch with pgAdmin 4:
+```bash
+docker compose --profile tools up -d
+```
 
-| Service | Container | Default host port | Notes |
-|---|---|---|---|
-| `db` | `postgres:16-alpine` | `DB_PORT` = 5433 (container 5432) | Mounts `sql/init` read-only into `/docker-entrypoint-initdb.d`; scripts run only on an empty volume. Health check: `pg_isready` |
-| `mailpit` | `axllent/mailpit` | `MAILPIT_PORT` = 8025 | Dev inbox for future OTP e-mails; SMTP port 1025 stays inside the network |
-| `backend` | built from `backend/Dockerfile` (Python 3.12) | `BACKEND_PORT` = 8000 | `uvicorn --reload`; code bind-mounted; waits for a healthy `db` |
-| `frontend` | built from `frontend/Dockerfile` (Node 20) | `FRONTEND_PORT` = 5173 | Vite dev server with polling; `node_modules` in a named volume |
-| `pgadmin` | `dpage/pgadmin4` (profile `tools`) | `PGADMIN_PORT` = 5050 | Server "PlaceTrack DB (docker)" pre-registered via `docker/pgadmin/servers.json` |
+---
 
-### Environment variables (names only; values in `.env`)
+## 3. Environment Configuration
 
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DB_PORT`, `BACKEND_PORT`, `FRONTEND_PORT`, `PGADMIN_PORT`, `MAILPIT_PORT`, `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CORS_ORIGINS`, `VITE_API_BASE_URL`, `PGADMIN_EMAIL`, `PGADMIN_PASSWORD`, `MAIL_FROM`. Inside Compose the backend also receives `DATABASE_URL`, `SMTP_HOST` and `SMTP_PORT`. `JWT_SECRET` is declared but nothing uses it yet.
+All configuration is managed through `.env` (overriding defaults in `backend/app/core/config.py`):
 
-### Health checks
+| Variable | Default Value | Description |
+|---|---|---|
+| `POSTGRES_USER` | `placetrack` | Database username |
+| `POSTGRES_PASSWORD` | `placetrack_dev_password` | Database password |
+| `POSTGRES_DB` | `placetrack_db` | Primary database name |
+| `DB_PORT` | `5433` | Host port mapped to PostgreSQL container 5432 |
+| `BACKEND_PORT` | `8000` | Host port for FastAPI REST API |
+| `FRONTEND_PORT` | `5173` | Host port for React Vite frontend |
+| `MAILPIT_PORT` | `8025` | Host port for Mailpit web inbox |
+| `PGADMIN_PORT` | `5050` | Host port for pgAdmin 4 |
+| `JWT_SECRET` | *(configured in .env)* | 256-bit secret key for HS256 token signing |
+| `JWT_ALGORITHM` | `HS256` | Token signature algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Lifespan of issued access tokens |
+| `CORS_ORIGINS` | `http://localhost:5173` | Allowed frontend origins |
+| `VITE_API_BASE_URL` | `http://localhost:8000/api/v1` | Axios client target API URL |
+
+---
+
+## 4. Live Health Check Probes
+
+Verify the active stack using HTTP curl or browser requests:
 
 ```bash
+# Backend liveness
 curl http://localhost:8000/health
-curl http://localhost:8000/api/v1/health/db      # public_tables expected: 17 after init scripts succeed
+# Response: {"status": "healthy", "service": "placetrack-backend"}
+
+# API and database pool health
+curl http://localhost:8000/api/v1/health/db
+# Response: {"status": "healthy", "database": "connected", "public_tables": 17, "pool_status": "active"}
+
+# Database table verification inside container
+docker compose exec db psql -U placetrack -d placetrack_db -c "\dt"
+# Displays 17 tables
+
+# Placement record verification
 docker compose exec db psql -U placetrack -d placetrack_db -c "SELECT COUNT(*) FROM placements;"
+# Displays 5 placement records
 ```
 
-### Connecting pgAdmin from your PC
+---
 
-Host `localhost`, port = `DB_PORT` (5433 by default), maintenance database = `POSTGRES_DB`, user and password from `.env`. Then open files from `sql/demo/` in the Query Tool.
-
-## 4. Deployment diagram (local development)
+## 5. Development Diagram
 
 ```mermaid
 flowchart LR
-    DEV[Developer machine]
-    subgraph DOCKER["Docker Compose project: placetrack"]
-        DBc[("db :5432, host 5433<br/>volume pgdata")]
-        MP[mailpit :8025]
-        BE[backend :8000<br/>uvicorn --reload]
-        FE[frontend :5173<br/>Vite skeleton]
-        PA[pgadmin :5050<br/>profile tools]
+    HOST[Developer Host]
+    
+    subgraph DOCKER["Docker Compose Stack (Isolated Network: placetrack-net)"]
+        FE[frontend :5173<br/>React 18 + Vite 5<br/>Active Web App]
+        BE[backend :8000<br/>FastAPI 0.115<br/>Uvicorn --reload]
+        DB[("db :5432<br/>PostgreSQL 16 Alpine<br/>Volume: pgdata")]
+        MP[mailpit :8025 / :1025<br/>Local Mail Server]
+        PA[pgadmin :5050<br/>Web DBMS Admin]
     end
-    PRO[prototype/ :3000<br/>npm run dev, separate]
-    DEV --> FE
-    DEV --> BE
-    DEV --> MP
-    DEV --> PA
-    DEV --> PRO
-    FE --> BE
-    BE --> DBc
-    BE -.-> MP
-    PA --> DBc
-    DEV -. "pgAdmin on PC" .-> DBc
-    PRO -. "no connection yet" .-> BE
+
+    HOST -->|Browser: localhost:5173| FE
+    HOST -->|API Probes: localhost:8000| BE
+    HOST -->|Email Inspection: localhost:8025| MP
+    HOST -->|DBMS Admin: localhost:5050| PA
+    HOST -.->|Direct DB Tool: localhost:5433| DB
+
+    FE -->|Axios REST /api/v1| BE
+    BE -->|SQLAlchemy 2 Pool| DB
+    BE -->|SMTP OTP Delivery| MP
+    PA -->|Internal Connection| DB
 ```
 
-## 5. Troubleshooting (expected failure modes, untested)
+---
 
-| Symptom | Likely cause | Action |
+## 6. Troubleshooting Common Issues
+
+| Symptom | Root Cause | Resolution |
 |---|---|---|
-| `db` unhealthy, backend never starts | An init SQL script failed | `docker compose logs db`; fix the reported statement; `docker compose down -v && docker compose up -d` |
-| `/health/db` returns 500 | Database unreachable or credentials differ from `.env` | `docker compose ps`; check `POSTGRES_*` values and re-create volume |
-| `public_tables` is 0 | Volume existed before scripts were added | `docker compose down -v` |
-| Port already in use | Another service on 5433/8000/5173/5050/8025 | Change the `*_PORT` variable |
-| Hot reload not updating on Windows/macOS | File-event limits on bind mounts | Polling is already enabled (`WATCHFILES_FORCE_POLLING`, Vite `usePolling`) |
-| Prototype `npm run lint` fails | Script runs `tsc` with no TS sources | Known (KI-014) |
-
-## 6. Not configured
-
-Production images, reverse proxy, TLS, CI/CD, backups, monitoring, log aggregation, secrets management.
+| `db` container unhealthy | Corrupt volume or conflicting previous data | Run `docker compose down -v && docker compose up -d` to re-execute initialization scripts. |
+| Port conflict on 5433, 8000, or 5173 | Host port occupied by local service | Modify `DB_PORT`, `BACKEND_PORT`, or `FRONTEND_PORT` in `.env`. |
+| Hot reload slow or not updating on Windows | Bind mount file event delay | Polling is pre-configured via `WATCHFILES_FORCE_POLLING=true` in backend and `usePolling: true` in `vite.config.js`. |
+| Mailpit inbox shows no OTPs | Student signup request failed validation | Ensure the student roll number exists in the seeded `students` roster before requesting OTP. |

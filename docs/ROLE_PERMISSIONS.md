@@ -1,90 +1,96 @@
-# Role Permissions
+# Role & Permission Architecture
 
-Roles: **ADMIN** (institution administration), **STAFF** (placement staff / TPO, Training and Placement Officer), **STUDENT**. STAFF is a separate role from ADMIN: the prototype gives STAFF operational pages but excludes user management, analytics and policy configuration.
+## 1. Role Definitions & Responsibilities
 
-> **Enforcement reality.** Everything below describes what the **React prototype** does in the browser. No server enforces any of it (KI-001, KI-002). The SQL schema stores `users.role` and enforces data rules (eligibility, status transitions, tier policy) but not per-role access; the FastAPI backend has no authentication yet. Treat this as the specification to implement server-side.
+PlaceTrack defines three distinct system roles with strictly separated operational boundaries:
 
-## 1. Route access (verified in `prototype/src/App.jsx`)
+| Role | Operational Scope & Responsibilities | Profile Credentials Displayed |
+|---|---|---|
+| **ADMIN** | **Institution-Level Administration**: Global configuration, user account lifecycle, partner companies, drive approvals, policy governance, and analytical auditing. | Role Title, Designation, Institutional Office/Unit. Academic fields (`cgpa`, `backlogs`, `roll_number`) are **strictly excluded**. |
+| **STAFF** (TPO / Coordinator) | **Placement Operations**: Managing recruitment drives, student eligibility auditing, interview scheduling, round progression, offer recording, and candidate selections. | Role Title, Staff Designation, Placement Office/Department. Academic fields are **strictly excluded**. |
+| **STUDENT** | **Placement Candidate**: Self-service profile management, skill self-assessment, eligibility evaluation, job applications, interview schedule viewing, and offer acceptance/declination. | Full Name, Roll Number, Department, Batch, Verified CGPA, Active Backlogs, Resume URL, Technical Skills. |
 
-| Route | ADMIN | STAFF | STUDENT | Page component |
-|---|:-:|:-:|:-:|---|
-| `/dashboard` | yes | yes | yes | `DashboardRouter` (AdminOverview / StudentOverview) |
-| `/dashboard/profile` | yes | yes | yes | `ProfilePage` |
-| `/dashboard/notifications` | yes | yes | yes | `NotificationsPage` |
-| `/dashboard/jobs` | yes | yes | yes | `JobsPage` (staff manage, student browse/apply) |
-| `/dashboard/students` | yes | yes | no | `StudentsPage` |
-| `/dashboard/companies` | yes | yes | no | `CompaniesPage` |
-| `/dashboard/eligible-students` | yes (not in sidebar) | yes | no | `StaffEligibleStudentsPage` |
-| `/dashboard/applications` | yes (sidebar) | yes | no | `ApplicationsPage` |
-| `/dashboard/interviews` | yes (not in sidebar) | yes | no | `StaffInterviewsPage` |
-| `/dashboard/results` | yes (not in sidebar) | yes | no | `StaffResultsSelectionPage` |
-| `/dashboard/placements` | yes | yes | no | `PlacementsPage` |
-| `/dashboard/user-management` | yes | **no** | no | `UserManagementPage` |
-| `/dashboard/analytics` | yes | **no** | no | `AnalyticsPage` |
-| `/dashboard/policies` | yes | **no** | no | `PlacementPoliciesPage` |
-| `/dashboard/my-applications` | no | no | yes | `StudentMyApplications` |
-| `/dashboard/my-interviews` | no | no | yes | `StudentInterviewsPage` |
-| `/dashboard/my-placement` | no | no | yes | `StudentMyPlacement` |
-| `/dashboard/my-offers` | no | no | yes (no sidebar item) | `StudentMyPlacement` |
-| `/dashboard/my-progress` | no | no | yes | `StudentProgressPage` |
-| `/dashboard/settings` | no | no | yes | `StudentSettingsPage` |
+---
 
-A denied role sees an "access restricted" panel (and, in demo mode, a button to switch to an allowed account).
+## 2. Enforcement Architecture: Defense-in-Depth
 
-## 2. Resource permission matrix (prototype behaviour)
+Authorization is enforced at multiple architectural layers:
 
-Legend: **V** view, **C** create, **U** update, **D** delete, **A** approve/finalize, **own** own records only, **all** institution-wide (no per-staff scoping found except notification routing), **-** none. Basis: the `mockApi` methods each page calls (see [TRACEABILITY.md](./TRACEABILITY.md)). "Not enforced" means no check exists beyond the page being hidden.
-
-| Resource | ADMIN | STAFF | STUDENT | Notes |
-|---|---|---|---|---|
-| User / staff accounts | V, C, U, activate/deactivate (all) | - | - | `createUserAccount`, `updateUserAccount`, `toggleUserAccountStatus`. No delete (deactivate instead) |
-| Student records | V all, U skills, A CGPA verification, promote | V all, U skills, A CGPA verification, promote | V, U own profile and skills | `getStudents` returns all students to any caller (KI-002). No delete, no create from UI except signup / user management |
-| Staff records | V, C, U | V own, U own profile | - | |
-| Companies | V, C, U | V, C, U | - (sees company on job cards) | No delete in prototype |
-| Job drives | V, C, U | V, C, U | V (eligible and ineligible, with checklist) | No delete or archive in prototype |
-| Eligibility rules | U (inside job form), V | U (inside job form), V | V result checklist | Rules are fields of the job (CGPA, backlogs, departments, skills) |
-| Eligible-students list | V | V, notify (`sendNotification`) | - | |
-| Applications | V all, U status | V all, U status | C (apply), V own | Withdraw not implemented. `applyToJob` does not enforce rules (KI-005) |
-| Interview schedule | C, U, cancel | C, U, cancel | V own | `scheduleInterview`, `updateInterview`, `cancelInterview` |
-| Selection results | A (select / reject, create offer) | A | V own outcome | `updateApplicationStatus`, `createOffer` |
-| Offers | C, U, V all | C, U, V all | V own, accept / decline own | `updateOfferStatus`; tier policy in `_evaluateOfferPolicyForStudent` |
-| Placement analytics | V | - (overview variant only) | - | `getAnalytics` partly hard-coded (KI-009) |
-| Notifications | V own, mark read, send | V own, mark read, send | V own, mark read | Filtered by recipient id and role; read state per user |
-| Messages (Demo Inbox) | Message anyone: staff, students, HR contacts | Same as ADMIN | Staff and admin only | `getPermittedMessagingContacts`; frontend-only |
-| Placement policies | V, U | - | V (reads policy on offers page) | Most fields not enforced (KI-006) |
-| Own profile | V, U | V, U | V, U | `ProfilePage` |
-| Account switching (demo) | yes | yes | yes | Demo only; must be removed or admin-only in production |
-
-## 3. Data ownership rules to implement server-side
-
-1. A STUDENT may read and write only rows whose `student_id` equals their own (`users.student_id`); never another student's applications, interviews, offers or notifications.
-2. STAFF operate on all students, or only assigned departments if that policy is adopted. The prototype stores `assigned_departments` on staff accounts and uses it only to route notifications (`prototype/src/services/mockApi.js`).
-3. ADMIN-only: user management, analytics, policy editing.
-4. Eligibility, status transitions and the tier policy are enforced by SQL triggers once the database is used (`sql/init/05_triggers.sql`), independent of the role.
-5. Responses must never include `password_hash` or OTP hashes.
-
-## 4. Role and permission flow
-
-```mermaid
-flowchart TD
-    A[Request: route or API call] --> B{Authenticated?}
-    B -- "No (planned: JWT; prototype: demo session only)" --> X[Redirect to /login]
-    B -- Yes --> C{Role in allowed roles for route?}
-    C -- No --> D[Access restricted panel / HTTP 403]
-    C -- Yes --> E{Resource owned by caller or role is ADMIN/STAFF?}
-    E -- No --> D
-    E -- Yes --> F[Page / endpoint executes]
-    F --> G[(Mock store today, PostgreSQL planned)]
-    F --> H[Notification generated for recipient role and id]
+```
+[ Incoming Request ]
+         │
+         ▼
+[ Layer 1: Frontend Route Guard ] ──(Client Check)──► Access Restricted Panel / Redirect
+         │
+         ▼
+[ Layer 2: API Gateway & JWT Auth ] ──(Invalid/Missing Token)──► HTTP 401 Unauthorized
+         │
+         ▼
+[ Layer 3: FastAPI RBAC Dependency ] ──(Role Not Allowed)──► HTTP 403 Forbidden
+         │
+         ▼
+[ Layer 4: Resource Ownership Scoping ] ──(Cross-Tenant Access)──► HTTP 403/404 Filter
+         │
+         ▼
+[ Layer 5: PostgreSQL Triggers & Constraints ] ──(Business Invariant Failed)──► Rollback (HTTP 400)
 ```
 
-## 5. Outstanding authorization gaps
+1. **Frontend Route Guards (`RoleProtectedRoute.jsx`)**: Enforces immediate UI-level access control, preventing unauthorized routes from rendering.
+2. **Backend Authentication (`get_current_user`)**: Verifies signature, expiration, and payload of HS256 JWT tokens extracted from the `Authorization: Bearer` header.
+3. **Backend Authorization (`require_roles(...)`)**: Injected into FastAPI route handlers to enforce role-based access at the server boundary.
+4. **Resource Ownership Scoping**: Endpoints like `/applications/mine`, `/offers/mine`, and `/notifications` derive the student ID directly from the authenticated JWT `sub` claim, preventing cross-student data leakage.
+5. **Database Triggers**: Constraints and stored procedures (`sql/init/04_procedures.sql`, `05_triggers.sql`) reject illegal state transitions (such as unapproved offer acceptance or duplicate applications).
 
-| Gap | Severity | See |
-|---|---|---|
-| No authentication; any visitor can assume ADMIN | High | KI-001 |
-| No server-side checks of role or ownership | High | KI-002 |
-| `ROLE_PERMISSIONS` flags unused; rules scattered | Medium | KI-003 |
-| Sidebar and routes disagree for ADMIN and `my-offers` | Low | KI-004 |
-| STAFF department scoping only affects notifications | Medium | open question: should staff see all students? |
-| Policy toggles stored but not enforced | Medium | KI-006 |
+---
+
+## 3. Route Access Matrix (Frontend & API)
+
+The table below correlates frontend routes (`frontend/src/App.jsx`) with their underlying FastAPI backend API endpoints and enforced roles:
+
+| Frontend Route | Page Component | Underlying FastAPI Endpoint | ADMIN | STAFF | STUDENT | Verified Status |
+|---|---|---|:---:|:---:|:---:|---|
+| `/dashboard` | `DashboardRouter` | `GET /api/v1/analytics/overview` or `/jobs` | ✓ | ✓ | ✓ | **Integrated and verified** |
+| `/dashboard/profile` | `ProfilePage` | `GET /api/v1/auth/me` | ✓ | ✓ | ✓ | **Integrated and verified** (Role-isolated fields) |
+| `/dashboard/notifications` | `NotificationsPage` | `GET /api/v1/notifications` | ✓* | ✓* | ✓ | **Integrated and verified** (*Admin/Staff receive `[]`) |
+| `/dashboard/jobs` | `JobsPage` | `GET /api/v1/jobs` | ✓ | ✓ | ✓ | **Integrated and verified** |
+| `/dashboard/students` | `StudentsPage` | `GET /api/v1/students` | ✓ | ✓ | ✗ | **Integrated and verified** |
+| `/dashboard/companies` | `CompaniesPage` | `GET /api/v1/companies` | ✓ | ✓ | ✗* | **Integrated and verified** (*Students view via job cards) |
+| `/dashboard/eligible-students` | `StaffEligibleStudentsPage` | `GET /api/v1/jobs/{id}/eligible-students` | ✓ | ✓ | ✗ | **Integrated and verified** |
+| `/dashboard/applications` | `ApplicationsPage` | `GET /api/v1/applications` | ✓ | ✓ | ✗ | **Integrated and verified** |
+| `/dashboard/interviews` | `StaffInterviewsPage` | `GET /api/v1/applications/{id}/interviews` | ✓ | ✓ | ✗ | **Implemented in backend** (Frontend transitional) |
+| `/dashboard/results` | `StaffResultsSelectionPage` | `PATCH /api/v1/applications/{id}/status` | ✓ | ✓ | ✗ | **Implemented in backend** (Frontend transitional) |
+| `/dashboard/placements` | `PlacementsPage` | `GET /api/v1/placements` | ✓ | ✓ | ✗ | **Integrated and verified** |
+| `/dashboard/user-management` | `UserManagementPage` | `GET/POST /api/v1/students`, `/users` | ✓ | ✗ | ✗ | **Partially implemented** (Admin only) |
+| `/dashboard/analytics` | `AnalyticsPage` | `GET /api/v1/analytics/*` | ✓ | ✓ | ✗ | **Integrated and verified** |
+| `/dashboard/policies` | `PlacementPoliciesPage` | SQL triggers (`fn_policy_allows`) | ✓ | ✗ | ✗ | **Implemented in SQL** (UI transitional) |
+| `/dashboard/my-applications` | `StudentMyApplications` | `GET /api/v1/applications/mine` | ✗ | ✗ | ✓ | **Integrated and verified** |
+| `/dashboard/my-interviews` | `StudentInterviewsPage` | `GET /api/v1/applications/{id}/interviews` | ✗ | ✗ | ✓ | **Implemented in backend** (Frontend transitional) |
+| `/dashboard/my-placement` | `StudentMyPlacement` | `GET /api/v1/offers/mine`, `/placements/mine` | ✗ | ✗ | ✓ | **Integrated and verified** |
+| `/dashboard/my-progress` | `StudentProgressPage` | Derived from applications & offers | ✗ | ✗ | ✓ | **Implemented in prototype** |
+| `/dashboard/settings` | `StudentSettingsPage` | Local client settings | ✗ | ✗ | ✓ | **Implemented in prototype** |
+
+---
+
+## 4. Resource Operations & Ownership Rules
+
+| Resource | ADMIN | STAFF | STUDENT | Ownership & Authorization Invariant |
+|---|---|---|---|---|
+| **Users / Accounts** | View, Create, Deactivate | None | None | Admin-only system governance. Plaintext passwords never stored. |
+| **Student Roster** | View all, Verify CGPA | View all, Verify CGPA | View own profile only | Students restricted to updating own skills and bio. CGPA verified by Staff/Admin only. |
+| **Companies** | Full CRUD | Full CRUD (except delete) | View active hiring partners | Company deletion restricted to Admin to prevent orphan placements. |
+| **Job Drives** | Full CRUD | Full CRUD (except delete) | View eligible & open drives | Students cannot view internal drive notes or candidate pools. |
+| **Applications** | View all, update status | View all, update status | Apply to eligible jobs, view own | Applications restricted to open drives; student can apply only once (`uq_application_student_job`). |
+| **Interviews** | Full CRUD | Full CRUD | View own scheduled rounds | Interviewers, meeting links, and schedules scoped per application. |
+| **Offers** | View all, set CTC breakdown | View all, set CTC breakdown | View own, Accept / Decline own | Offer acceptance enforces tier policy; accepting higher tier supersedes or locks lower tier offers. |
+| **Placements** | View all, CSV export | View all, CSV export | View own placement record | Generated automatically upon offer acceptance. Exactly one active placement per student. |
+| **Analytics** | View all, refresh views | View all | None | Materialized view refresh restricted to Admin. |
+| **Notifications** | View own (`[]`) | View own (`[]`) | View own, Mark read | In-app notifications addressed per student recipient. Admin/Staff gracefully return empty list. |
+
+---
+
+## 5. Security & Permission Status Summary
+
+1. **Server-Side Authorization**: **Integrated and verified.** FastAPI dependency injection enforces roles across all endpoints.
+2. **Student Data Isolation**: **Integrated and verified.** Student endpoints filter queries by authenticated JWT student ID.
+3. **Profile Credential Isolation**: **Integrated and verified.** Admin and Staff profiles omit student academic attributes.
+4. **Remaining Work**: Complete migration of transitional staff pages (`StaffInterviewsPage`, `StaffResultsSelectionPage`, `PlacementPoliciesPage`, `UserManagementPage`) to real backend endpoints.

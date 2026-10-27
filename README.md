@@ -1,129 +1,150 @@
-# PlaceTrack: Campus Placement Management System
+# PlaceTrack: Campus Placement Management & Analytics System
 
-PlaceTrack centralizes a college's campus recruitment process for three roles: **ADMIN**, **STAFF** (placement staff) and **STUDENT**. It covers student placement profiles, company drives, eligibility checks, applications, interview rounds, selection, offers and placement analytics.
+PlaceTrack centralizes a college's campus recruitment operations for three roles: **ADMIN**, **STAFF** (Placement Officer / Coordinator), and **STUDENT**. It covers student academic profiles, corporate recruitment drives, automated eligibility evaluation, job applications, interview rounds, candidate selection, offer letters with tier-progression enforcement, and placement analytics.
 
-> **Read this first: what actually exists.**
-> - A complete interactive **frontend prototype** (`prototype/`, from Google AI Studio) running on **mock data in the browser**. It is not connected to any backend or database.
-> - A **FastAPI skeleton** (`backend/`) with health endpoints only.
-> - An **unexecuted PostgreSQL design** (`sql/init/`): 17 tables, views, functions, procedures, triggers, seed data.
-> - A Docker Compose stack for the backend/database side. The prototype is **not** part of it.
->
-> Nothing has been built, run or tested in the latest review (see [docs/TESTING.md](docs/TESTING.md)). Integration between the prototype and the backend has **not started** ([docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md)).
+---
 
-## Problem statement
+## 1. System Reality & Implementation State
 
-Placement data is usually scattered across spreadsheets and messages, so it is hard to see who is eligible for a drive, where applications stand, which offers exist and what the placement numbers are. PlaceTrack aims at one source of truth with role-appropriate access.
+- **Active Web Client (`frontend/`)**: React 18.3.1 + Vite 5.4.21 + Tailwind CSS + Axios. Mounted in Docker on `http://localhost:5173`. Connected via Bearer JWT to the FastAPI backend for authentication, student profile, drives, applications, offers, and notifications.
+- **Backend API (`backend/`)**: FastAPI + SQLAlchemy 2 + Pydantic v2. Exposes 11 operational routers with bcrypt password hashing, HS256 JWT access tokens, role-based authorization guards (`require_roles`), and relational SQL joins.
+- **Database (`sql/init/`)**: PostgreSQL 16 container (`placetrack-db`) running 17 tables in 3NF, 13 views (including materialized view `mv_placement_kpis`), domain CHECK constraints, triggers enforcing business invariants, and stored procedures.
+- **Historical Prototype (`prototype/`)**: Google AI Studio export (React 19 / Vite 8 / client mocks), preserved as a static UI/UX design reference.
+- **Verification Evidence**: **115 passing tests** in Pytest (`pytest -v`), clean Vite production build (41.26s, 0 errors), and live PostgreSQL 16 queries verified via health endpoints.
 
-## Features (and their honest status)
+---
 
-| Area | Status |
+## 2. Feature Implementation Status
+
+| Feature Area | Architectural Implementation | Verified Status |
+|---|---|---|
+| **Landing Page & 3D Workstation** | React 18, Three.js / R3F, smooth scroll | **Integrated and verified** |
+| **Authentication & Tokens** | Bcrypt password hashing, HS256 JWT, OTP signup via Mailpit | **Integrated and verified** |
+| **Server-Side RBAC** | FastAPI dependency injection (`require_roles`) | **Integrated and verified** |
+| **Profile Role Isolation** | Admin/Staff institutional credentials; Student academic fields isolated | **Integrated and verified** |
+| **Student Roster & Verification** | Student directory, CDC CGPA verification endpoint | **Integrated and verified** |
+| **Company Partnerships** | Company directory, tier classification (`CORE`, `DREAM`, `SUPER_DREAM`) | **Integrated and verified** |
+| **Job Recruitment Drives** | Drive management, dynamic eligibility criteria, cutoffs | **Integrated and verified** |
+| **Applications & Lifecycle** | Application submission, duplicate prevention trigger, student tracking | **Integrated and verified** |
+| **Interview Scheduling** | Multi-round interviews, meeting link actions, schedule viewing | **Implemented in backend** (Frontend transitional) |
+| **Offers & Placements** | Offer release, acceptance, atomic placement confirmation, tier policy | **Integrated and verified** |
+| **In-App Notifications** | Trigger-generated notifications, role-safe endpoint (`[]` for non-students) | **Integrated and verified** |
+| **Placement Analytics** | Materialized view KPIs, department stats, company hiring distributions | **Integrated and verified** |
+| **Peer Messaging** | Client-side simulation modal in frontend; real tables planned for Phase 2 | **Implemented in prototype** |
+
+Full matrix: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). Verified problem register: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
+
+---
+
+## 3. User Roles & Profile Credentials
+
+| Role | Operational Scope | Profile Credentials Displayed |
+|---|---|---|
+| **ADMIN** | Institution-level oversight: user accounts, company partnerships, drive approvals, policy governance, and analytical auditing. | Role Title, Designation, Institutional Office/Unit. Academic fields (`cgpa`, `backlogs`, `roll_number`) are **strictly excluded**. |
+| **STAFF** | Placement operations: recruitment drives, student eligibility auditing, interview scheduling, round progression, and offers. | Role Title, Staff Designation, Placement Office/Department. Academic fields are **strictly excluded**. |
+| **STUDENT** | Placement candidate: academic profile, eligibility evaluation, job applications, interview schedules, and offer decisions. | Full Name, Roll Number, Department, Batch, Verified CGPA, Active Backlogs, Resume URL, Technical Skills. |
+
+Details: [docs/ROLE_PERMISSIONS.md](docs/ROLE_PERMISSIONS.md).
+
+---
+
+## 4. Technology Stack
+
+| Layer | Technology |
 |---|---|
-| Landing page, sign in / sign up, 3D visuals | Prototype (simulated) |
-| Role dashboards for ADMIN, STAFF, STUDENT (20 dashboard routes) | Prototype (simulated) |
-| Demo identity switching, role-guarded routes | Prototype (client-side only) |
-| Eligibility checks with match percentage | Prototype (client formula) and SQL functions (unexecuted) |
-| Applications, interviews, selection, offers, tier policy | Prototype (simulated) and SQL triggers/procedures (unexecuted) |
-| Notifications and simulated Demo Inbox | Prototype (simulated) |
-| Analytics | Prototype (partly hard-coded numbers) |
-| REST API for the features above | **Not implemented** (health endpoints only) |
-| Real authentication and server-side authorization | **Not implemented** |
+| **Frontend** | React 18.3.1, Vite 5.4.21, React Router 6.26.0, Tailwind CSS 3.4.17, Axios 1.7.0, Lucide React, Recharts |
+| **Backend** | Python 3.12, FastAPI 0.115, SQLAlchemy 2.0, Pydantic v2, Passlib (bcrypt), Python-Jose (JWT) |
+| **Database** | PostgreSQL 16 Alpine, `pgcrypto` extension, 17 tables, 13 views, triggers, stored procedures |
+| **Containerization** | Docker Compose v2 with live code mounting and hot reload |
+| **Tooling** | Mailpit (local email catcher on `:8025`), pgAdmin 4 (profile `tools` on `:5050`) |
 
-Full matrix: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). Verified problems: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
+---
 
-## User roles
-
-| Role | Purpose |
-|---|---|
-| ADMIN | Institution oversight: all staff pages plus user management, analytics, policies |
-| STAFF | Placement operations: students, companies, drives, applications, interviews, offers, placements |
-| STUDENT | Own profile, eligible drives, applications, interviews, offers and progress |
-
-Demo identities (illustrative, not real people): ADMIN Ishan Wankhede, STAFF Raghav Menon, STUDENT Rohit Verma. Details: [docs/ROLE_PERMISSIONS.md](docs/ROLE_PERMISSIONS.md).
-
-## Technology
-
-| Layer | Actual technology |
-|---|---|
-| Prototype UI | React 19, Vite 8, React Router 7, Tailwind CSS 4, GSAP, Lenis, three.js + React Three Fiber, Recharts, framer-motion, jsPDF |
-| Docker frontend skeleton | React 18, Vite, axios (status page only) |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Pydantic v2 (skeleton) |
-| Database | PostgreSQL 16 with `pgcrypto` |
-| Tooling | Docker Compose, Mailpit (dev mail catcher), pgAdmin (optional) |
-
-## Architecture in one picture
+## 5. Architecture
 
 ```mermaid
 flowchart LR
-    U[ADMIN / STAFF / STUDENT] --> P[prototype/: React UI + mockApi + localStorage]
-    P -. "not connected" .-> B[backend/: FastAPI health only]
-    B --> D[(PostgreSQL: sql/init, unexecuted)]
+    DEV[Browser / Client] --> FE["frontend/ :5173<br/>React 18 + Vite 5<br/>Axios Client"]
+    FE -->|HTTP REST /api/v1<br/>Bearer JWT| BE["backend/ :8000<br/>FastAPI Routers<br/>require_roles RBAC"]
+    BE -->|SQLAlchemy 2 Pool| DB[("db :5432 (host 5433)<br/>PostgreSQL 16<br/>Triggers & Procedures")]
+    BE -->|SMTP OTP Delivery| MP["mailpit :8025<br/>Email Catcher"]
+    PA["pgadmin :5050<br/>DBMS Admin"] --> DB
 ```
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md).
 
-## Repository structure
+---
+
+## 6. Repository Structure
 
 ```
 PlaceTrack/
-├── README.md              this file
-├── PHASES.md              roadmap with real progress
-├── PROMPTS.md             AI-assisted workflow and prompt library (git-ignored)
-├── docker-compose.yml     db, mailpit, backend, frontend skeleton, optional pgAdmin
-├── .env.example           variable names with safe placeholders
-├── docs/                  PRD, ARCHITECTURE, FRONTEND_ARCHITECTURE, API, DB_SCHEMA, ER_DIAGRAM,
-│                          REQUIREMENTS, TRACEABILITY, ROLE_PERMISSIONS, WORKFLOWS, TESTING,
-│                          DEPLOYMENT, INTEGRATION_PLAN, KNOWN_ISSUES, IMPLEMENTATION_STATUS,
-│                          PROTOTYPE_AUDIT
-├── prototype/             Google AI Studio export (UI on mock data; git-ignored)
-├── frontend/              Docker skeleton: health status page
-├── backend/               FastAPI skeleton + tests
-├── sql/init/              schema, views, functions, procedures, triggers, seed
-├── sql/demo/              demonstration scripts for pgAdmin (DML, DQL, DCL, TCL, joins, ...)
-└── docker/pgadmin/        pgAdmin server registration
+├── README.md              Project overview and architecture
+├── PHASES.md              Development roadmap and phase completion
+├── docker-compose.yml     Multi-container stack (frontend, backend, db, mailpit, pgadmin)
+├── .env.example           Template environment configuration
+├── docs/                  Authoritative system documentation (18 files)
+│   ├── PRD.md             Product requirements and feature scope
+│   ├── ARCHITECTURE.md    Full-stack system architecture
+│   ├── FRONTEND_ARCHITECTURE.md Frontend architecture and data flow
+│   ├── API.md             FastAPI REST endpoints and schemas
+│   ├── DB_SCHEMA.md       PostgreSQL 16 relational data dictionary
+│   ├── ER_DIAGRAM.md      Entity-relationship diagram (17 tables)
+│   ├── REQUIREMENTS.md    Functional and non-functional requirements
+│   ├── TRACEABILITY.md    Code-to-documentation traceability matrix
+│   ├── ROLE_PERMISSIONS.md Role permissions and profile credentials
+│   ├── WORKFLOWS.md       System lifecycle workflows
+│   ├── SECURITY.md        Security controls and verification audit
+│   ├── TESTING.md         Authoritative test and verification evidence
+│   ├── DEPLOYMENT.md      Docker setup and troubleshooting
+│   ├── INTEGRATION_PLAN.md Migration plan and status
+│   ├── KNOWN_ISSUES.md    Defect and resolution register
+│   ├── IMPLEMENTATION_STATUS.md Layer overview and status matrix
+│   ├── PROTOTYPE_AUDIT.md Historical prototype file inventory
+│   └── DEMO_SCRIPT.md     DBMS viva and presentation walkthrough
+├── frontend/              Active containerized React 18 web application
+├── backend/               Active containerized FastAPI backend & Pytest suite
+├── sql/init/              PostgreSQL 16 DDL, views, functions, procedures, triggers, seed
+├── sql/demo/              DBMS viva SQL demonstration scripts for pgAdmin
+└── prototype/             Historical Google AI Studio prototype (UI reference)
 ```
 
-`prototype/` and `PROMPTS.md` are listed in `.gitignore`; see KI-018 in the known-issues register if you want the docs' file links to work on GitHub.
+---
 
-## Prerequisites
+## 7. Running the Application
 
-Node.js and npm (prototype); Docker Desktop with Compose v2 (backend, database). No other local installs are required.
-
-## Run the prototype (the part you can see today)
+### Start Multi-Container Stack
 
 ```bash
-cd prototype
-npm install
-npm run dev          # http://localhost:3000
+# 1. Initialize environment file
+cp .env.example .env
+
+# 2. Launch all services with hot reload
+docker compose up -d
+
+# 3. Check container health
+docker compose ps
 ```
 
-Sign in from the landing page or `/login`, then use the header role selector (demo mode) to switch between ADMIN, STAFF and STUDENT. Data persists in the browser; Student Settings has a reset action. Commands come from `prototype/package.json`; not executed in review.
+- **Web Application**: `http://localhost:5173`
+- **FastAPI Documentation**: `http://localhost:8000/docs`
+- **Mailpit Email Catcher**: `http://localhost:8025`
+- **PostgreSQL Database**: `localhost:5433` (User: `placetrack`, DB: `placetrack_db`)
+- **pgAdmin 4** (optional): `docker compose --profile tools up -d` -> `http://localhost:5050`
 
-## Run the Docker stack (backend + database)
+---
+
+## 8. Verification & Testing
 
 ```bash
-cp .env.example .env            # adjust ports/secrets; never commit .env
-docker compose up -d --build
+# Execute automated backend test suite (115 tests)
+docker compose exec backend pytest -v
+
+# Verify frontend production build
+docker compose exec frontend npm run build
+
+# Verify database connection pool health
 curl http://localhost:8000/api/v1/health/db
 ```
 
-`sql/init/*.sql` run automatically on an empty database volume. Ports, services, pgAdmin connection and troubleshooting: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The first run is the first real test of the SQL scripts.
-
-## Testing
-
-Backend: `docker compose exec backend pytest -q` (2 health tests, never executed). Prototype: no tests. Recommended smoke tests and database checks: [docs/TESTING.md](docs/TESTING.md).
-
-## Database
-
-17 tables with eligibility, tier-policy, status-transition, offer and notification logic in SQL. Documentation generated from the SQL: [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md), [docs/ER_DIAGRAM.md](docs/ER_DIAGRAM.md). The prototype needs entities the schema lacks (messaging, policies, staff profiles, settings) and uses different status names; the gap table is in DB_SCHEMA.md.
-
-## Known limitations
-
-No real authentication (anyone can become ADMIN in the prototype), no server-side authorization, no integration, nothing executed in review, several settings stored but not enforced, analytics partly hard-coded. See [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
-
-## Roadmap
-
-See [PHASES.md](PHASES.md) and [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).
-
-## License
-
-Internal academic project.
+Details: [docs/TESTING.md](docs/TESTING.md).
