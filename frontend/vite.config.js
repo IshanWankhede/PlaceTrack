@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [tailwindcss(), react()],
   server: {
     host: true,          // listen on 0.0.0.0 inside Docker
     port: 5173,
