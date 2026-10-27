@@ -102,7 +102,10 @@ SELECT
     o.base_lpa, o.bonus_lpa, o.esop_lpa, o.package,
     o.status,
     o.released_at,
-    o.responded_at
+    o.responded_at,
+    o.job_id,
+    o.company_id,
+    o.application_id
 FROM offers o
 JOIN students  s ON s.id = o.student_id
 JOIN jobs      j ON j.id = o.job_id

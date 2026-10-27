@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.routers import (
+    analytics,
     applications,
     auth,
     companies,
@@ -11,6 +12,8 @@ from app.routers import (
     health,
     jobs,
     notifications,
+    offers,
+    placements,
     skills,
     students,
 )
@@ -51,3 +54,8 @@ app.include_router(jobs.router, prefix=settings.api_v1_prefix)
 # Phase 4: Applications, Interviews, Notifications
 app.include_router(applications.router, prefix=settings.api_v1_prefix)
 app.include_router(notifications.router, prefix=settings.api_v1_prefix)
+
+# Phase 5: Offers, Placements, Analytics
+app.include_router(offers.router, prefix=settings.api_v1_prefix)
+app.include_router(placements.router, prefix=settings.api_v1_prefix)
+app.include_router(analytics.router, prefix=settings.api_v1_prefix)
