@@ -114,10 +114,16 @@ class MyApplicationOut(BaseModel):
 
     application_id: int
     job_id: int
-    company: str
+    # job_title is what the view/query provides; alias `title` for compatibility
     job_title: str
+    title: Optional[str] = None           # same as job_title, added for frontend compat
+    company: Optional[str] = None
+    tier: Optional[str] = None
+    package: Optional[Decimal] = None
+    location: Optional[str] = None
     status: str
     applied_at: datetime
+    applied_date: Optional[str] = None    # ISO date string, derived from applied_at
     interview_rounds: int = 0
     interviews: list[InterviewOut] = []
 

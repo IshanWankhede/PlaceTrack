@@ -23,6 +23,38 @@ import {
   GraduationCap,
 } from 'lucide-react';
 
+function OtpBoxes({ value, onChange, onKeyDown, onPaste, inputRefs }) {
+  return (
+    <div className="flex justify-center gap-2">
+      {value.map((digit, i) => (
+        <input
+          key={i}
+          ref={inputRefs ? (el) => { inputRefs[i].current = el; } : undefined}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="one-time-code"
+          maxLength={1}
+          value={digit}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => onChange(i, e.target.value)}
+          onKeyDown={(e) => onKeyDown(i, e)}
+          onPaste={onPaste}
+          className={`
+            w-11 h-12 text-center text-lg font-bold rounded-2xl border-2 bg-white
+            transition-all duration-150 outline-none cursor-text
+            ${digit
+              ? 'border-violet-500 text-[#0B0B0F] shadow-sm ring-1 ring-violet-200'
+              : 'border-black/10 text-[#64748B]'
+            }
+            focus:border-violet-600 focus:ring-4 focus:ring-violet-100 focus:scale-105
+          `}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -164,9 +196,19 @@ export default function AuthPage() {
       setErrors({ otp: 'Enter all 6 digits' });
       return;
     }
+    setLoading(true);
     setErrors({});
-    setMode('signup_password');
-    showToast('Code entered! Set your password to complete registration.');
+    try {
+      await authService.validateSignupOtp(signupEmail.trim(), entered);
+      setLoading(false);
+      setMode('signup_password');
+      showToast('Code verified! Set your password to complete registration.');
+    } catch (err) {
+      setLoading(false);
+      setErrors({
+        otp: err.response?.data?.detail || 'Invalid or expired verification code',
+      });
+    }
   };
 
   // ── Signup Step 3: set password & verify via backend ─────────────────────
@@ -268,32 +310,6 @@ export default function AuthPage() {
     }
   };
 
-  // ── OTP box component ─────────────────────────────────────────────────────
-  const OtpBoxes = ({ value, onChange, onKeyDown }) => (
-    <div className="flex justify-center gap-2">
-      {value.map((digit, i) => (
-        <input
-          key={i}
-          ref={i === 0 ? otpRefs[i] : otpRefs[i]}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={digit}
-          onChange={(e) => onChange(i, e.target.value)}
-          onKeyDown={(e) => onKeyDown(i, e)}
-          className={`
-            w-11 h-12 text-center text-lg font-bold rounded-2xl border-2 bg-white
-            transition-all duration-150 outline-none
-            ${digit
-              ? 'border-violet-500 text-[#0B0B0F] shadow-sm'
-              : 'border-black/10 text-[#64748B]'
-            }
-            focus:border-violet-500 focus:ring-2 focus:ring-violet-100
-          `}
-        />
-      ))}
-    </div>
-  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -562,6 +578,7 @@ export default function AuthPage() {
                   value={otp}
                   onChange={handleOtpChange}
                   onKeyDown={handleOtpKeyDown}
+                  inputRefs={otpRefs}
                 />
 
                 {errors.otp && (
@@ -736,6 +753,7 @@ export default function AuthPage() {
                       value={forgotOtp}
                       onChange={(i, v) => handleOtpChange(i, v, true)}
                       onKeyDown={(i, e) => handleOtpKeyDown(i, e, true)}
+                      inputRefs={forgotOtpRefs}
                     />
                     {errors.forgotOtp && (
                       <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl text-center">

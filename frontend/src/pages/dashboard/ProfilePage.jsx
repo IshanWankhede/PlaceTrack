@@ -40,16 +40,16 @@ export default function ProfilePage() {
   const isStaffOrAdmin = activeRole === 'ADMIN' || activeRole === 'STAFF';
 
   const [formData, setFormData] = useState({
-    name: user?.name || 'Ishan Wankhede',
-    email: user?.email || 'user@example.com',
-    phone: user?.phone || '+91 98112 33445',
-    resume_url: user?.resume_url || 'https://placetrack.edu/resumes/resume.pdf',
-    department: user?.department || user?.department_name || (isStaffOrAdmin ? 'Corporate Relations' : 'Computer Science'),
-    roll_number: user?.roll_number || (activeRole === 'ADMIN' ? 'CDC-DIR-001' : activeRole === 'STAFF' ? 'CDC-TPO-014' : '2023CS001'),
-    title: user?.title || (activeRole === 'ADMIN' ? 'Placement Director' : activeRole === 'STAFF' ? 'Placement Officer' : 'B.Tech Student'),
-    cgpa: user?.cgpa ?? 8.5,
-    cgpa_verified: user?.cgpa_verified ?? true,
-    active_backlogs: user?.active_backlogs ?? 0,
+    name: user?.name || user?.full_name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    resume_url: user?.resume_url || '',
+    department: user?.department || user?.department_name || (isStaffOrAdmin ? 'Corporate Relations & TPO' : ''),
+    roll_number: user?.roll_number || '',
+    title: user?.title || (activeRole === 'ADMIN' ? 'CDC Director' : activeRole === 'STAFF' ? 'Placement Officer' : 'B.Tech Student'),
+    cgpa: isStaffOrAdmin ? null : (user?.cgpa ?? null),
+    cgpa_verified: isStaffOrAdmin ? true : (user?.cgpa_verified ?? false),
+    active_backlogs: isStaffOrAdmin ? null : (user?.active_backlogs ?? 0),
     student_id: user?.student_id || null,
   });
 
@@ -364,7 +364,9 @@ export default function ProfilePage() {
                     {isStaffOrAdmin ? 'Institutional Credentials' : 'Academic & Contact Credentials'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    CGPA, department & backlogs are locked and verified by CDC
+                    {isStaffOrAdmin
+                      ? 'Official administrative credentials and verified authorization record'
+                      : 'CGPA, department & backlogs are locked and verified by CDC'}
                   </p>
                 </div>
               </div>
@@ -375,53 +377,102 @@ export default function ProfilePage() {
               </span>
             </div>
 
-            {/* Read-Only CDC Verified Block */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    CGPA (Read-Only)
+            {/* Read-Only Credentials Block (Role-Scoped) */}
+            {!isStaffOrAdmin ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      CGPA (Read-Only)
+                    </span>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <p className="text-xl font-display font-black text-[#0B0B0F] mt-1">
+                    {formData.cgpa !== null && formData.cgpa !== undefined ? `${formData.cgpa} / 10` : 'N/A'}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
                   </span>
-                  <Lock className="w-3 h-3 text-slate-400" />
                 </div>
-                <p className="text-xl font-display font-black text-[#0B0B0F] mt-1">
-                  {formData.cgpa} / 10
-                </p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
-                </span>
-              </div>
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Department (Read-Only)
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Department (Read-Only)
+                    </span>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5">
+                    {formData.department || 'General Engineering'}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
                   </span>
-                  <Lock className="w-3 h-3 text-slate-400" />
                 </div>
-                <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5">
-                  {formData.department}
-                </p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
-                </span>
-              </div>
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Active Backlogs (Read-Only)
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Active Backlogs (Read-Only)
+                    </span>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <p className="text-xl font-display font-black text-emerald-600 mt-1">
+                    {formData.active_backlogs ?? 0}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Verified by CDC
                   </span>
-                  <Lock className="w-3 h-3 text-slate-400" />
                 </div>
-                <p className="text-xl font-display font-black text-emerald-600 mt-1">
-                  {formData.active_backlogs}
-                </p>
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
-                  <ShieldCheck className="w-3 h-3" /> Verified by CDC
-                </span>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-black/5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      System Role
+                    </span>
+                    <ShieldCheck className="w-3 h-3 text-violet-600" />
+                  </div>
+                  <p className="text-lg font-display font-black text-[#0B0B0F] mt-1">
+                    {activeRole}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Authorized Officer
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Designation
+                    </span>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5 truncate">
+                    {formData.title || (activeRole === 'ADMIN' ? 'CDC Director' : 'Placement Coordinator')}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Institutional Record
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Office / Unit
+                    </span>
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-display font-bold text-[#0B0B0F] mt-1.5 truncate">
+                    {formData.department || 'Training & Placement Cell'}
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Career Advancement Cell
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Editable Contact Fields */}
             {isEditing ? (
@@ -477,10 +528,10 @@ export default function ProfilePage() {
 
                 <div>
                   <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
-                    Roll Number
+                    {isStaffOrAdmin ? 'Staff Identifier' : 'Roll Number'}
                   </span>
                   <p className="text-sm font-mono font-bold text-slate-800 mt-1">
-                    {formData.roll_number}
+                    {formData.roll_number || (isStaffOrAdmin ? `STAFF-${user?.id || 'CDC'}` : 'N/A')}
                   </p>
                 </div>
 

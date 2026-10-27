@@ -11,7 +11,37 @@ def get_offer(db: Session, offer_id: int) -> Optional[Offer]:
 
 
 def get_offer_overview(db: Session, offer_id: int) -> Optional[dict]:
-    query = text("SELECT * FROM v_offer_overview WHERE offer_id = :id")
+    query = text("""
+        SELECT
+            o.id            AS offer_id,
+            s.id            AS student_id,
+            s.name          AS student_name,
+            s.roll_number   AS roll_number,
+            d.name          AS department,
+            c.name          AS company,
+            c.tier,
+            j.title         AS job_title,
+            j.title         AS job_role,
+            o.base_lpa,
+            o.bonus_lpa,
+            o.esop_lpa,
+            o.package,
+            o.package       AS package_lpa,
+            o.esop_lpa      AS esop_value,
+            o.status,
+            o.released_at,
+            o.responded_at,
+            o.job_id,
+            o.company_id,
+            o.application_id,
+            NULL::text      AS joining_date
+        FROM offers o
+        JOIN students s ON s.id = o.student_id
+        LEFT JOIN departments d ON d.id = s.department_id
+        JOIN jobs j ON j.id = o.job_id
+        JOIN companies c ON c.id = o.company_id
+        WHERE o.id = :id
+    """)
     row = db.execute(query, {"id": offer_id}).mappings().first()
     return dict(row) if row else None
 
@@ -28,20 +58,47 @@ def list_offers_overview(
     params: dict = {"limit": limit, "offset": offset}
 
     if status:
-        clauses.append("status = :status")
+        clauses.append("o.status = :status")
         params["status"] = status.upper().strip()
     if student_id:
-        clauses.append("student_id = :student_id")
+        clauses.append("o.student_id = :student_id")
         params["student_id"] = student_id
     if company_id:
-        clauses.append("company_id = :company_id")
+        clauses.append("o.company_id = :company_id")
         params["company_id"] = company_id
 
     where_sql = " AND ".join(clauses)
     query = text(f"""
-        SELECT * FROM v_offer_overview
+        SELECT
+            o.id            AS offer_id,
+            s.id            AS student_id,
+            s.name          AS student_name,
+            s.roll_number   AS roll_number,
+            d.name          AS department,
+            c.name          AS company,
+            c.tier,
+            j.title         AS job_title,
+            j.title         AS job_role,
+            o.base_lpa,
+            o.bonus_lpa,
+            o.esop_lpa,
+            o.package,
+            o.package       AS package_lpa,
+            o.esop_lpa      AS esop_value,
+            o.status,
+            o.released_at,
+            o.responded_at,
+            o.job_id,
+            o.company_id,
+            o.application_id,
+            NULL::text      AS joining_date
+        FROM offers o
+        JOIN students s ON s.id = o.student_id
+        LEFT JOIN departments d ON d.id = s.department_id
+        JOIN jobs j ON j.id = o.job_id
+        JOIN companies c ON c.id = o.company_id
         WHERE {where_sql}
-        ORDER BY offer_id DESC
+        ORDER BY o.id DESC
         LIMIT :limit OFFSET :offset
     """)
     rows = db.execute(query, params).mappings().all()

@@ -8,9 +8,11 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from app.crud.crud_student import build_student_out, get_student
 from app.database.database import get_db
 from app.models.user import User
+from datetime import datetime
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    OtpValidateRequest,
     ResetPasswordRequest,
     SignupRequestOtp,
     SignupVerify,
@@ -120,6 +122,51 @@ def request_signup_otp(req: SignupRequestOtp, db: Session = Depends(get_db)):
         "status": "ok",
         "message": f"Verification code sent to {email}",
     }
+
+
+@router.post("/signup/validate-otp")
+def validate_signup_otp(req: OtpValidateRequest, db: Session = Depends(get_db)):
+    """Validates the OTP code without consuming it, allowing pre-flight UI check."""
+    email = req.email.lower().strip()
+    purpose = req.purpose.upper().strip()
+
+    row = db.execute(
+        text(
+            "SELECT otp_hash, expires_at, attempts, consumed "
+            "FROM email_otps "
+            "WHERE email = :email AND purpose = :purpose AND NOT consumed "
+            "ORDER BY id DESC LIMIT 1"
+        ),
+        {"email": email, "purpose": purpose},
+    ).mappings().first()
+
+    if not row:
+        raise AppException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification code",
+            code="INVALID_OTP",
+        )
+
+    if row["expires_at"] < datetime.now() or row["attempts"] >= 5:
+        raise AppException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired or maximum attempts reached",
+            code="OTP_EXPIRED",
+        )
+
+    is_match = db.execute(
+        text("SELECT (crypt(:otp, :hash) = :hash) AS match"),
+        {"otp": req.otp.strip(), "hash": row["otp_hash"]},
+    ).scalar()
+
+    if not is_match:
+        raise AppException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code",
+            code="INVALID_OTP",
+        )
+
+    return {"status": "ok", "valid": True}
 
 
 @router.post("/signup/verify", response_model=TokenResponse)

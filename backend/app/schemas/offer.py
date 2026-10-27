@@ -36,3 +36,12 @@ class OfferOut(BaseModel):
     job_id: Optional[int] = None
     company_id: Optional[int] = None
     application_id: Optional[int] = None
+
+    # Enriched fields for frontend views
+    roll_number: Optional[str] = None
+    department: Optional[str] = None
+    job_role: Optional[str] = None
+    package_lpa: Optional[Decimal] = None
+    esop_value: Optional[Decimal] = None
+    joining_date: Optional[str] = None
+

@@ -78,7 +78,7 @@ export default function StudentMyApplications() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchComp = (app.company || '').toLowerCase().includes(q);
-        const matchTitle = (app.title || '').toLowerCase().includes(q);
+        const matchTitle = (app.job_title || app.title || '').toLowerCase().includes(q);
         if (!matchComp && !matchTitle) return false;
       }
       if (statusFilter !== 'ALL' && app.status !== statusFilter) return false;
@@ -174,17 +174,17 @@ export default function StudentMyApplications() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-display font-bold text-lg text-[#0B0B0F]">
-                          {app.title}
+                          {app.job_title || app.title || 'Role Candidate'}
                         </h3>
                         <span className="text-xs font-bold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full">
                           {app.company}
                         </span>
                         <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
-                          {app.tier} Tier
+                          {app.tier || 'Standard'} Tier
                         </span>
                       </div>
                       <p className="text-xs text-[#64748B] mt-0.5">
-                        Applied: {app.applied_date} · Package: <strong className="text-[#0B0B0F]">{Number(app.package).toFixed(2)} LPA</strong>
+                        Applied: {app.applied_date || (app.applied_at ? new Date(app.applied_at).toLocaleDateString() : 'Recent')} · Package: <strong className="text-[#0B0B0F]">{app.package ? `${Number(app.package).toFixed(2)} LPA` : 'Competitive'}</strong>
                         {app.location && ` · Location: ${app.location}`}
                       </p>
                     </div>
@@ -303,7 +303,7 @@ export default function StudentMyApplications() {
       <Modal
         isOpen={Boolean(selectedApp)}
         onClose={() => setSelectedApp(null)}
-        title={selectedApp ? `${selectedApp.company} — ${selectedApp.title}` : 'Application Details'}
+        title={selectedApp ? `${selectedApp.company} — ${selectedApp.job_title || selectedApp.title || 'Application'}` : 'Application Details'}
         maxWidth="max-w-lg"
       >
         {selectedApp && (
@@ -321,15 +321,15 @@ export default function StudentMyApplications() {
               </div>
               <div className="flex justify-between">
                 <span className="text-[#64748B]">Tier:</span>
-                <span className="font-bold text-[#0B0B0F]">{selectedApp.tier} Tier</span>
+                <span className="font-bold text-[#0B0B0F]">{selectedApp.tier || 'Standard'} Tier</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#64748B]">Package:</span>
-                <span className="font-bold text-emerald-600">{Number(selectedApp.package).toFixed(2)} LPA</span>
+                <span className="font-bold text-emerald-600">{selectedApp.package ? `${Number(selectedApp.package).toFixed(2)} LPA` : 'Competitive'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#64748B]">Date Applied:</span>
-                <span className="font-bold text-[#0B0B0F]">{selectedApp.applied_date}</span>
+                <span className="font-bold text-[#0B0B0F]">{selectedApp.applied_date || (selectedApp.applied_at ? new Date(selectedApp.applied_at).toLocaleDateString() : 'Recent')}</span>
               </div>
             </div>
 

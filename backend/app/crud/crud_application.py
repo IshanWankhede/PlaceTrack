@@ -245,9 +245,24 @@ def list_interviews(db: Session, application_id: int) -> list[Interview]:
 
 def list_student_applications_with_interviews(db: Session, student_id: int) -> list[dict]:
     query = text("""
-        SELECT * FROM v_application_overview
-        WHERE student_id = :student_id
-        ORDER BY application_id DESC
+        SELECT
+            a.id            AS application_id,
+            a.job_id,
+            a.student_id,
+            a.status,
+            a.applied_at,
+            a.applied_at::date::text AS applied_date,
+            j.title         AS job_title,
+            j.title         AS title,
+            j.package,
+            j.location,
+            c.name          AS company,
+            c.tier
+        FROM applications a
+        JOIN jobs      j ON j.id = a.job_id
+        JOIN companies c ON c.id = j.company_id
+        WHERE a.student_id = :student_id
+        ORDER BY a.id DESC
     """)
     rows = db.execute(query, {"student_id": student_id}).mappings().all()
     results = []
@@ -255,5 +270,6 @@ def list_student_applications_with_interviews(db: Session, student_id: int) -> l
         d = dict(r)
         interviews = list_interviews(db, d["application_id"])
         d["interviews"] = interviews
+        d["interview_rounds"] = len(interviews)
         results.append(d)
     return results

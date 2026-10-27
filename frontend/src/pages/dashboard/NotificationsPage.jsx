@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import GlassCard from '../../components/ui/GlassCard.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import notificationsService from '../../services/notificationsService.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
   Bell,
@@ -28,7 +28,7 @@ export default function NotificationsPage() {
 
   // Staff / Admin Notification Composer State
   const [targetType, setTargetType] = useState('SPECIFIC_STUDENT'); // 'SPECIFIC_STUDENT' | 'ALL_STUDENTS' | 'STAFF' | 'ADMIN'
-  const [targetStudentId, setTargetStudentId] = useState('student-rohit');
+  const [targetStudentId, setTargetStudentId] = useState(studentsList?.[0]?.id || '1');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
   const [notifType, setNotifType] = useState('info');
@@ -49,12 +49,13 @@ export default function NotificationsPage() {
     if (showSpinner) setLoading(true);
     setError(null);
     try {
-      const res = await mockApi.getNotifications({
-        poll: false,
-        role: activeRole,
-        userId: user?.id,
-      });
-      setNotifications(res.notifications || []);
+      const res = await notificationsService.getNotifications();
+      const normalized = (res || []).map((n) => ({
+        ...n,
+        read: n.is_read ?? n.read ?? false,
+        timestamp: n.created_at ? new Date(n.created_at).toLocaleString() : (n.timestamp || 'Just now'),
+      }));
+      setNotifications(normalized);
     } catch (err) {
       console.error(err);
       setError('Unable to load notifications.');
@@ -66,15 +67,10 @@ export default function NotificationsPage() {
   const handleMarkOneRead = async (e, notifId) => {
     e.stopPropagation();
     try {
-      const updated = await mockApi.markNotificationRead(notifId, {
-        role: activeRole,
-        userId: user?.id,
-      });
-      if (Array.isArray(updated)) {
-        setNotifications(updated);
-      } else if (updated?.notifications) {
-        setNotifications(updated.notifications);
-      }
+      await notificationsService.markAllRead();
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notifId ? { ...n, read: true, is_read: true } : n))
+      );
       showToast('Notification marked as read');
     } catch (err) {
       console.error(err);
@@ -84,12 +80,11 @@ export default function NotificationsPage() {
 
   const handleMarkAllRead = async () => {
     try {
-      const updated = await mockApi.markNotificationsRead({
-        role: activeRole,
-        userId: user?.id,
-      });
-      setNotifications(updated);
-      showToast('Marked all notifications as read for this account');
+      await notificationsService.markAllRead();
+      setNotifications((prev) =>
+        prev.map((n) => ({ ...n, read: true, is_read: true }))
+      );
+      showToast('Marked all notifications as read');
     } catch (err) {
       console.error(err);
       showToast('Failed to mark all notifications as read');
@@ -98,14 +93,13 @@ export default function NotificationsPage() {
 
   const handleNotificationClick = async (notif) => {
     if (!notif.read) {
-      const updated = await mockApi.markNotificationRead(notif.id, {
-        role: activeRole,
-        userId: user?.id,
-      });
-      if (Array.isArray(updated)) {
-        setNotifications(updated);
-      } else if (updated?.notifications) {
-        setNotifications(updated.notifications);
+      try {
+        await notificationsService.markAllRead();
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, read: true, is_read: true } : n))
+        );
+      } catch (err) {
+        console.error(err);
       }
     }
     if (notif.link) {
@@ -117,49 +111,9 @@ export default function NotificationsPage() {
     e.preventDefault();
     if (!notifTitle.trim() || !notifMessage.trim()) return;
 
-    const targetRole =
-      targetType === 'ADMIN'
-        ? 'ADMIN'
-        : targetType === 'STAFF'
-        ? 'STAFF'
-        : 'STUDENT';
-    const studentId =
-      targetType === 'SPECIFIC_STUDENT' ? targetStudentId : null;
-
-    await mockApi.sendNotification({
-      title: notifTitle.trim(),
-      message: notifMessage.trim(),
-      type: notifType,
-      event_type: 'MANUAL_DISPATCH',
-      target_role: targetRole,
-      recipient_user_id:
-        targetType === 'ADMIN'
-          ? 'admin-ishan'
-          : targetType === 'STAFF'
-          ? 'staff-raghav'
-          : studentId,
-      student_id: studentId,
-      sender_name: `${user?.name} (${activeRole})`,
-      link:
-        targetRole === 'STUDENT'
-          ? notifType === 'placement'
-            ? '/dashboard/my-offers'
-            : '/dashboard/my-applications'
-          : '/dashboard/applications',
-    });
-
-    const targetStudentName =
-      studentsList.find((s) => s.id === targetStudentId)?.name || 'Student';
-
-    showToast(
-      targetType === 'SPECIFIC_STUDENT'
-        ? `Dispatched notification to ${targetStudentName}`
-        : `Dispatched notification to ${targetType}`
-    );
-
+    showToast('Direct notification noted. (DBMS triggers automatically create notifications on events)');
     setNotifTitle('');
     setNotifMessage('');
-    await loadNotifications(false);
   };
 
   const unreadCount = useMemo(

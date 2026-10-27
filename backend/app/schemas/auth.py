@@ -39,6 +39,12 @@ class SignupVerify(BaseModel):
     password: str = Field(..., min_length=6)
 
 
+class OtpValidateRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6)
+    purpose: str = "SIGNUP"
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 

@@ -14,6 +14,15 @@ export const authService = {
     return res.data;
   },
 
+  async validateSignupOtp(email, otp, purpose = "SIGNUP") {
+    const res = await api.post("/auth/signup/validate-otp", {
+      email,
+      otp,
+      purpose,
+    });
+    return res.data;
+  },
+
   async verifySignup(email, otp, password) {
     const res = await api.post("/auth/signup/verify", {
       email,

@@ -339,7 +339,7 @@ export default function StudentMyPlacement() {
                   Candidate Name
                 </span>
                 <span className="font-bold text-white block mt-0.5">
-                  {user?.name || activeOffer.student || 'Rohit Verma'}
+                  {user?.name || activeOffer.student_name || activeOffer.student || 'Candidate'}
                 </span>
               </div>
               <div>
@@ -347,7 +347,7 @@ export default function StudentMyPlacement() {
                   Roll Number
                 </span>
                 <span className="font-bold text-white block mt-0.5 font-mono">
-                  {user?.roll_number || activeOffer.roll_number || '21EC015'}
+                  {user?.roll_number || activeOffer.roll_number || 'N/A'}
                 </span>
               </div>
               <div>
@@ -355,7 +355,7 @@ export default function StudentMyPlacement() {
                   Department
                 </span>
                 <span className="font-bold text-white block mt-0.5">
-                  {user?.department || activeOffer.department || 'Electronics & Comm.'}
+                  {user?.department || activeOffer.department || 'Engineering'}
                 </span>
               </div>
               <div>
@@ -475,7 +475,7 @@ export default function StudentMyPlacement() {
                   email: 'raghav.tpo@placetrack.edu',
                   subtitle: 'Senior Placement Coordinator (TPO)',
                 }}
-                subject={`Offer Policy Query: ${activeOffer.company} (${activeOffer.package_lpa} LPA)`}
+                subject={`Offer Policy Query: ${activeOffer.company} (${activeOffer.package || activeOffer.package_lpa} LPA)`}
               />
             </div>
           </div>
@@ -494,7 +494,7 @@ export default function StudentMyPlacement() {
             ? `Accept Offer from ${confirmModal.offer?.company}?`
             : `Decline Offer from ${confirmModal.offer?.company}?`
         }
-        subtitle={`${confirmModal.offer?.job_role} · ${confirmModal.offer?.package_lpa} LPA (${confirmModal.offer?.tier} Tier)`}
+        subtitle={`${confirmModal.offer?.job_role || confirmModal.offer?.job_title || 'Role'} · ${confirmModal.offer?.package || confirmModal.offer?.package_lpa} LPA (${confirmModal.offer?.tier} Tier)`}
       >
         <div className="space-y-4 pt-2">
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1.5">
@@ -521,7 +521,7 @@ export default function StudentMyPlacement() {
             </div>
             <div>
               <span className="text-[10px] text-[#64748B] block uppercase">ESOP</span>
-              <span className="font-bold text-violet-700">{confirmModal.offer?.esop_value} LPA</span>
+              <span className="font-bold text-violet-700">{confirmModal.offer?.esop_lpa ?? confirmModal.offer?.esop_value ?? '0'} LPA</span>
             </div>
           </div>
 

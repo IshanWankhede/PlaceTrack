@@ -5,7 +5,9 @@ import StatCard from '../../components/ui/StatCard.jsx';
 import Button from '../../components/ui/Button.jsx';
 import StatusBadge from '../../components/ui/StatusBadge.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { mockApi } from '../../services/mockApi.js';
+import jobsService from '../../services/jobsService.js';
+import applicationsService from '../../services/applicationsService.js';
+import offersService from '../../services/offersService.js';
 import { checkEligibility } from '../../services/eligibility.js';
 import {
   Award,
@@ -19,7 +21,7 @@ import {
 
 export default function StudentOverview() {
   const navigate = useNavigate();
-  const { activeDemoUser: user } = useAuth();
+  const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [applications, setApplications] = useState([]);
   const [offers, setOffers] = useState([]);
@@ -27,20 +29,24 @@ export default function StudentOverview() {
   useEffect(() => {
     async function load() {
       try {
-        const targetStudentId = user?.id || 'student-rohit';
         const [jobsData, appsData, offersData] = await Promise.all([
-          mockApi.getJobs(),
-          mockApi.getApplications(),
-          mockApi.getOffers(targetStudentId),
+          jobsService.getJobs({ page_size: 50 }).catch(() => ({ items: [] })),
+          applicationsService.getMyApplications().catch(() => []),
+          offersService.getMyOffers().catch(() => []),
         ]);
-        setJobs(jobsData);
-        const studentApps = appsData.filter(
-          (a) => (a.student_id || a.studentId) === targetStudentId
+        const rawJobs = jobsData?.items || jobsData || [];
+        setJobs(
+          rawJobs.map((j) => ({
+            ...j,
+            company: j.company_name || j.company || 'Corporate Partner',
+            package_lpa: j.package ? Number(j.package) : (j.package_lpa || 0),
+            deadline: j.application_deadline || j.deadline || null,
+          }))
         );
-        setApplications(studentApps);
+        setApplications(appsData || []);
         setOffers(offersData || []);
       } catch (err) {
-        console.error(err);
+        console.error('Failed to load student overview data:', err);
       }
     }
     load();
@@ -101,7 +107,7 @@ export default function StudentOverview() {
             </div>
             <div>
               <p className="font-bold text-xs text-emerald-950">
-                Offer Letter Issued: {primaryOffer.company} ({primaryOffer.package_lpa} LPA · {primaryOffer.tier} Tier) — Status: {primaryOffer.offer_status}
+                Offer Letter Issued: {primaryOffer.company} ({primaryOffer.package || primaryOffer.package_lpa} LPA · {primaryOffer.tier} Tier) — Status: {primaryOffer.status || primaryOffer.offer_status}
               </p>
               <p className="text-[11px] text-emerald-800">
                 Review base, bonus & ESOP breakdown or accept/decline under the single-offer policy.
@@ -125,7 +131,7 @@ export default function StudentOverview() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <StatCard
           title="Open Campus Drives"
-          value={openJobs.length || 6}
+          value={openJobs.length || 0}
           suffix="Active"
           trend={`Eligible for ${eligibleCount} drives`}
           trendPositive={true}
@@ -195,18 +201,18 @@ export default function StudentOverview() {
           <div className="divide-y divide-black/5">
             {applications.map((app, index) => (
               <div
-                key={`${app.id}-${index}`}
+                key={`${app.application_id || app.id || index}-${index}`}
                 className="py-3.5 flex items-center justify-between gap-4"
               >
                 <div>
                   <p className="font-bold text-xs text-[#0B0B0F]">{app.company}</p>
                   <p className="text-[11px] text-[#64748B]">
-                    {app.job?.title} · Current Stage: <strong>{app.current_round || 'Online Test'}</strong>
+                    {app.job_title || app.title || app.job?.title || 'Applied Position'} · Current Stage: <strong>{app.current_round || app.status || 'Applied'}</strong>
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="font-bold text-xs text-[#0B0B0F]">
-                    {app.job?.package_lpa} LPA
+                    {app.package || app.job?.package_lpa ? `${app.package || app.job?.package_lpa} LPA` : 'Competitive'}
                   </span>
                   <StatusBadge status={app.status} size="sm" />
                 </div>

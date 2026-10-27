@@ -2,8 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_roles
-from app.core.errors import AppException
+from app.core.deps import get_current_user
 from app.crud import crud_notification
 from app.database.database import get_db
 from app.models.user import User
@@ -16,11 +15,11 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 def get_my_notifications(
     unread: Optional[bool] = Query(None, description="If true, return only unread notifications"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["STUDENT"])),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve notifications for the authenticated student, newest first."""
+    """Retrieve notifications for the authenticated user, newest first. Non-students receive an empty list."""
     if not current_user.student_id:
-        raise AppException(status_code=400, detail="Student profile not linked to user account")
+        return []
 
     return crud_notification.list_student_notifications(
         db, student_id=current_user.student_id, unread_only=unread
@@ -30,11 +29,12 @@ def get_my_notifications(
 @router.post("/read-all")
 def mark_all_notifications_read(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["STUDENT"])),
+    current_user: User = Depends(get_current_user),
 ):
-    """Mark all notifications of the authenticated student as read."""
+    """Mark all notifications of the authenticated user as read."""
     if not current_user.student_id:
-        raise AppException(status_code=400, detail="Student profile not linked to user account")
+        return {"message": "Notifications marked as read"}
 
     crud_notification.mark_notifications_read(db, student_id=current_user.student_id)
     return {"message": "Notifications marked as read"}
+
