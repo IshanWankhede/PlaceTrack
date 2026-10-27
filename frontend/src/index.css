@@ -1,5 +1,109 @@
-:root { font-family: system-ui, sans-serif; }
-body { margin: 0; background: #0f172a; color: #e2e8f0; }
-.card { max-width: 520px; margin: 12vh auto; padding: 28px; border-radius: 14px; background: #1e293b; }
-.ok { color: #4ade80; }
-.bad { color: #f87171; }
+@import "tailwindcss";
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    border-color: rgba(11, 11, 15, 0.08);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  html, body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: #F6F6F8;
+    color: #0B0B0F;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.025em;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid rgba(139, 92, 246, 0.65);
+    outline-offset: 2px;
+  }
+}
+
+/* Glassmorphism helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 16px 40px -12px rgba(11, 11, 15, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
+.glass-panel-subtle {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.glass-panel-dark {
+  background: rgba(11, 11, 15, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+}
+
+/* Plus grid background from reference */
+.bg-plus-grid {
+  background-size: 40px 40px;
+  background-image: 
+    radial-gradient(circle, rgba(11, 11, 15, 0.1) 1px, transparent 1px);
+}
+
+.bg-hero-glow {
+  background: 
+    radial-gradient(circle 600px at 15% 30%, rgba(245, 196, 81, 0.12), transparent 70%),
+    radial-gradient(circle 700px at 85% 25%, rgba(139, 92, 246, 0.15), transparent 75%),
+    radial-gradient(circle 500px at 50% 60%, rgba(99, 102, 241, 0.08), transparent 70%);
+}
+
+/* Invisible scrollbars with full functional scrolling across all containers */
+*::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+  display: none;
+}
+
+/* Smooth cursor rules */
+@media (any-hover: hover) and (any-pointer: fine) {
+  html.smooth-cursor-active,
+  html.smooth-cursor-active body,
+  html.smooth-cursor-active button,
+  html.smooth-cursor-active a,
+  html.smooth-cursor-active [role="button"],
+  html.smooth-cursor-active select {
+    cursor: none !important;
+  }
+
+  /* Allow text caret for editing inputs */
+  html.smooth-cursor-active input,
+  html.smooth-cursor-active textarea,
+  html.smooth-cursor-active [contenteditable="true"] {
+    cursor: text !important;
+  }
+}
+
+/* Respect user reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
