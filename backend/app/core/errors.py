@@ -75,9 +75,15 @@ def register_error_handlers(app: FastAPI) -> None:
         loc = " -> ".join(str(l) for l in first_err.get("loc", []))
         msg = first_err.get("msg", "Validation error")
         detail = f"{loc}: {msg}" if loc else msg
+        # Ensure errors list is JSON-serializable (convert all values to str)
+        safe_errors = [
+            {k: str(v) if not isinstance(v, (str, int, float, bool, type(None), list)) else v
+             for k, v in err.items()}
+            for err in exc.errors()
+        ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": detail, "code": "VALIDATION_ERROR", "errors": exc.errors()},
+            content={"detail": detail, "code": "VALIDATION_ERROR", "errors": safe_errors},
         )
 
     @app.exception_handler(IntegrityError)

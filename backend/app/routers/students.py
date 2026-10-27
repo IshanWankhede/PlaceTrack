@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_roles
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.crud.crud_department import get_department
+from app.schemas.job import EligibleJobOut
+from app.services.eligibility import eligible_jobs
 from app.crud.crud_student import (
     build_student_out,
     create_student,
@@ -161,6 +163,27 @@ def update_student_me_profile(
 
     updated = update_student_me(db, student, obj_in)
     return build_student_out(updated)
+
+
+@router.get("/{student_id}/eligible-jobs", response_model=list[EligibleJobOut])
+def eligible_jobs_for_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns OPEN eligible jobs for a student, sorted by match score.
+    STUDENT role can only query their own id; ADMIN/STAFF can query any student.
+    Calls fn_eligible_jobs(:student_id).
+    """
+    if current_user.role == "STUDENT" and current_user.student_id != student_id:
+        raise ForbiddenError("Students can only view their own eligible jobs")
+
+    from app.models.student import Student
+    student = db.get(Student, student_id)
+    if not student:
+        raise NotFoundError("Student not found")
+
+    return eligible_jobs(db, student_id)
 
 
 @router.get("/{student_id}", response_model=StudentOut)
