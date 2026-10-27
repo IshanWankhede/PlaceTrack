@@ -56,11 +56,18 @@ def get_current_user(
     return user
 
 
-def require_roles(*roles: str) -> Callable[[User], User]:
+def require_roles(*roles: str | list[str] | tuple[str, ...]) -> Callable[[User], User]:
     """Dependency factory checking that the current user possesses one of the allowed roles."""
+    flat_roles = set()
+    for r in roles:
+        if isinstance(r, (list, tuple, set)):
+            flat_roles.update(r)
+        else:
+            flat_roles.add(r)
+
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
-            raise ForbiddenError(f"Forbidden: requires role in {roles}")
+        if current_user.role not in flat_roles:
+            raise ForbiddenError(f"Forbidden: requires role in {sorted(flat_roles)}")
         return current_user
 
     return role_checker

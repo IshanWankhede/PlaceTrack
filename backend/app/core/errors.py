@@ -126,6 +126,16 @@ def register_error_handlers(app: FastAPI) -> None:
 
         # SQLSTATE P0001: PostgreSQL raise_exception (from triggers/functions/procedures)
         if pgcode == "P0001":
+            if "already applied" in msg.lower():
+                return JSONResponse(
+                    status_code=status.HTTP_409_CONFLICT,
+                    content={"detail": msg, "code": "DUPLICATE_APPLICATION"},
+                )
+            if "not found" in msg.lower():
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"detail": msg, "code": "NOT_FOUND"},
+                )
             return JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 content={"detail": msg, "code": "TRIGGER_RAISE_EXCEPTION"},

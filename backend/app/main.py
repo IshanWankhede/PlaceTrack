@@ -3,7 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.errors import register_error_handlers
-from app.routers import auth, companies, departments, health, jobs, skills, students
+from app.routers import (
+    applications,
+    auth,
+    companies,
+    departments,
+    health,
+    jobs,
+    notifications,
+    skills,
+    students,
+)
 
 app = FastAPI(
     title=settings.app_name,
@@ -37,3 +47,7 @@ app.include_router(students.router, prefix=settings.api_v1_prefix)
 # Phase 3: Companies, Jobs, Eligibility
 app.include_router(companies.router, prefix=settings.api_v1_prefix)
 app.include_router(jobs.router, prefix=settings.api_v1_prefix)
+
+# Phase 4: Applications, Interviews, Notifications
+app.include_router(applications.router, prefix=settings.api_v1_prefix)
+app.include_router(notifications.router, prefix=settings.api_v1_prefix)

@@ -27,7 +27,10 @@ SELECT
     j.title         AS job_title,
     a.status,
     a.applied_at,
-    (SELECT COUNT(*) FROM interviews i WHERE i.application_id = a.id) AS interview_rounds
+    (SELECT COUNT(*) FROM interviews i WHERE i.application_id = a.id) AS interview_rounds,
+    a.student_id,
+    a.job_id,
+    c.id            AS company_id
 FROM applications a
 JOIN students  s ON s.id = a.student_id
 JOIN jobs      j ON j.id = a.job_id
